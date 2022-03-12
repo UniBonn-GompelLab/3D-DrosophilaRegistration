@@ -18,7 +18,7 @@ from scipy import stats, ndimage
 import matplotlib.pyplot as plt
 from tifffile import imsave
 from tqdm import tqdm
-
+from src.aux_pcd_functions  import pcd_to_image, image_to_pcd
 
 def registration_of_abdomens_3D(
         preprocessed_data_df, preprocessed_folder, reference_fly_filename,\
@@ -98,9 +98,8 @@ def register_and_save(filename_fl, filename_tl, folder, reference_fly, abdomen_m
     #draw_registration_result(after_icp, target, np.eye(4))
     
     # Apply mask to select only the fly abdomen:
-    registered_source_image = pcd_to_image(after_icp,Source_values,reference_fly.shape)
-    final_image = registered_source_image*abdomen_mask
-    final_image_TL = registered_source_image_TL*abdomen_mask
+    final_image = registered_source_image#*abdomen_mask
+    final_image_TL = registered_source_image_TL#*abdomen_mask
     
     #final_pcd, final_values = image_to_pcd(final_image)
     #final_pcd_TL, final_values_TL = image_to_pcd(final_image_TL)
@@ -177,29 +176,6 @@ def refine_registration(source, target, threshold):
         o3d.pipelines.registration.TransformationEstimationPointToPoint(with_scaling=False))
     return result
 
-def pcd_to_image(pcd,values, image_shape):
-    array = np.asarray(pcd.points).T.astype(int)
-    image = np.zeros(image_shape)
-    count = np.zeros(image_shape)
-    for i in range(array.shape[-1]):
-        pos = tuple(array[...,i])
-        if (pos[0]<image_shape[0]) and (pos[1]<image_shape[1]) and (pos[2]<image_shape[2]) and (pos[0]>0) and (pos[1]>0) and (pos[2]>0):
-            image[pos] += values[i]
-            count[pos] += 1
-    image[count>1] = image[count>1]/count[count>1]
-    mask = morphology.closing(image>0, morphology.ball(2))
-    image_median = ndimage.median_filter(image, size=3)
-    image[count==0] = image_median[count==0]
-    image = image*mask
-    return image
-
-def image_to_pcd(image):
-    indexes = np.nonzero(image > 0)
-    pcd_points = np.array(indexes).T
-    pcd_values = image[indexes]
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(pcd_points)
-    return pcd, pcd_values
 
 
 if __name__ == '__main__':

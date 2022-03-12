@@ -18,6 +18,7 @@ from scipy import stats
 import matplotlib.pyplot as plt
 from tifffile import imsave
 from tqdm import tqdm
+from src.aux_pcd_functions  import pcd_to_image, image_to_pcd
 
 
 
@@ -167,7 +168,7 @@ def aux_save_images(images,names,folder):
     return list(file_names_list)
 
 
-def segmentation_with_optimized_thresh(image, threshold = 1.05, max_iter = 200, fraction_range = [0.04, 0.08]):
+def segmentation_with_optimized_thresh(image, threshold = 1.05, max_iter = 200, fraction_range = [0.03, 0.08]):
     test_thresholded = image > threshold*np.mean(image)
     segm_fract = np.sum(test_thresholded)/test_thresholded.size
     step = 0.01
@@ -211,10 +212,52 @@ def clean_up_segmented_image(binary_image, dilation_r = 2, closing_r1 = 4, closi
     biggest_object = morphology.remove_small_objects(label_image, min_size=size-1)>0
     biggest_object = morphology.erosion(biggest_object, morphology.ball(dilation_r))
     
-    # fill small holes in the final segmented image:
+    # fill small holes in the segmented image:
     biggest_object = morphology.closing(biggest_object, morphology.ball(closing_r2))
     
-    return biggest_object
+    # Skeletonize the segmented image, slice by slice:
+    skeletonized = skeletonize_on_slices(biggest_object)
+    
+    # Create a pcd from the skeletonized image
+    skeleton_pcd, skeleton_values = image_to_pcd(skeletonized)
+    
+    # Remove outliers from the skeletonized pcd, based on n_neighbrours within a radius:
+    uni_down_pcd = skeleton_pcd.uniform_down_sample(every_k_points=3)
+    cleaned_pcd, ind = uni_down_pcd.remove_radius_outlier(nb_points=4, radius=3)
+    cleaned_pcd, ind = cleaned_pcd.remove_radius_outlier(nb_points=4, radius=3)
+    
+    # Create a mesh that fits through the cleaned points to fill potential holes:
+    cleaned_pcd.estimate_normals()
+    cleaned_pcd.orient_normals_consistent_tangent_plane(k=30)
+    
+    poisson_mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(cleaned_pcd, depth=5, width=0, scale=1.2, linear_fit=True)[0]
+    bbox = cleaned_pcd.get_axis_aligned_bounding_box()
+    p_mesh_crop = poisson_mesh.crop(bbox)
+        
+    # Resample the mesh and create the final point cloud including both points
+    # from the original cleaned pcd and those obtained from the fitting mesh:
+    
+    resampled_pcd = p_mesh_crop.sample_points_uniformly(number_of_points=40000)
+    final_pcd = o3d.geometry.PointCloud()
+    final_pcd.points = o3d.utility.Vector3dVector( np.concatenate((cleaned_pcd.points, resampled_pcd.points), axis=0) )
+
+    final_pcd_values = np.ones(np.asarray(final_pcd.points).shape[0])
+    final_image = pcd_to_image(final_pcd, final_pcd_values, binary_image.shape)
+    final_image = morphology.dilation(final_image, morphology.ball(3))
+
+    
+    return final_image
+
+def skeletonize_on_slices(image_3d):
+    
+    result = np.zeros(image_3d.shape)
+    
+    for i in range(image_3d.shape[1]):
+        image = image_3d[:,i,:]
+        skeleton = morphology.skeletonize(image)
+        result[:,i,:] = skeleton
+
+    return result 
 
 
 
