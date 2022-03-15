@@ -1,5 +1,5 @@
 ##################################################
-## Preprocessing and segmentation of fla abdomens
+## Preprocessing and segmentation of fly abdomens
 ##################################################
 ## Author: Stefano
 ## Version: November 2021
@@ -23,8 +23,10 @@ from src.aux_pcd_functions  import pcd_to_image, image_to_pcd
 
 
 def preprocess_and_segment_images(
+    
     read_folder, destination_folder, binning=(18,6,6), bit_depth=8, only_on_new_files = True,\
     database_filename = 'DatasetInformation.xlsx'):
+    
     '''
     Parameters
     ----------
@@ -50,9 +52,11 @@ def preprocess_and_segment_images(
     only the surface of the fly in the original z-stack
 
     '''
+    
     tqdm.pandas()
     # unify databases across folders:
     raw_data_df = create_raw_images_database(read_folder, database_filename)
+    
     if len(raw_data_df) == 0:
         print('No dataset information files with the given name have been found')
         return
@@ -92,14 +96,13 @@ def create_raw_images_database(root_folder, database_filename = 'DatasetInformat
             raw_data_df = raw_data_df.append(DatasetInfo)
         except:
             pass
+
     raw_data_df['File_exists'] = raw_data_df.apply(lambda row: \
     pd.Series(os.path.isfile(os.path.join(row['folder'], 'C1-'+row['image file name']))), axis=1)
 
+
     raw_data_df = raw_data_df[raw_data_df['File_exists']]
-
-    #Drop images not used for the analysis:
-    #raw_data_df = raw_data_df.drop(raw_data_df[raw_data_df["used for analysis"]=="no"].index)
-
+    
     # Remove duplicated filenames:
     raw_data_df = raw_data_df.drop_duplicates(subset='image file name', keep="last")
     
@@ -108,48 +111,45 @@ def create_raw_images_database(root_folder, database_filename = 'DatasetInformat
 
 def preprocess_and_save(image_file_name, folder, binning, bit_depth, destination_folder, DatasetInfoPreproc):
 
-    filename_fl = os.path.join(folder,'C1-'+image_file_name)
-    filename_dic = os.path.join(folder,'C2-'+image_file_name)
+    filename_GFP = os.path.join(folder,'C1-'+image_file_name)
+    filename_DsRed = os.path.join(folder,'C2-'+image_file_name)
     
     if os.path.splitext(image_file_name)[0] in DatasetInfoPreproc['experiment'].values:
         return pd.Series([os.path.splitext(image_file_name)[0], 'Preprocessed_C1-'+image_file_name,'Preprocessed_C2-'+image_file_name])
     try:
-        image_fl = io.imread(filename_fl)
-        image_dic = io.imread(filename_dic)
+        image_GFP = io.imread(filename_GFP)
+        image_DsRed = io.imread(filename_DsRed)
     except:
-        image_fl = float("NaN")
-        image_dic = float("NaN")
+        image_GFP = float("NaN")
+        image_DsRed = float("NaN")
         return pd.Series([float("NaN"), float("NaN"), float("NaN")])
     
     max_value = 2**bit_depth-1
-    
-    # inverting dic image:
-    image_dic = max_value - image_dic
-    
+  
     # rescale images to 16bits:
-    image_dic = image_dic*65536/max_value
-    image_fl = image_fl*65536/max_value
+    image_DsRed = image_DsRed*65536/max_value
+    image_GFP = image_GFP*65536/max_value
 
     # Binning:
-    image_downscaled = transform.downscale_local_mean(image_fl, binning)[1:-2,1:-2,1:-2]
-    image_dic_downscaled = block_reduce(image_dic, binning, np.max, cval=0)[1:-2,1:-2,1:-2]
+    image_downscaled = transform.downscale_local_mean(image_GFP, binning)[1:-2,1:-2,1:-2]
+    image_DsRed_downscaled = block_reduce(image_DsRed, binning, np.max, cval=0)[1:-2,1:-2,1:-2]
 
     # Segmentation:
     thresholded = segmentation_with_optimized_thresh(image_downscaled)
 
     # Padding:
     image_downscaled = image_padding(image_downscaled)
-    image_dic_downscaled = image_padding(image_dic_downscaled)
+    image_DsRed_downscaled = image_padding(image_DsRed_downscaled)
     thresholded  = image_padding(thresholded)
     
     # Clean up the segmentation with morphological transformations:
     thresholded = clean_up_segmented_image(thresholded)
     
-    segmented_image_fl = (image_downscaled+1)*thresholded
-    segmented_image_dic = (image_dic_downscaled+1)*thresholded
+    segmented_image_GFP = (image_downscaled+1)*thresholded
+    segmented_image_DsRed = (image_DsRed_downscaled+1)*thresholded
 
-    image_file_names = [os.path.basename(filename_fl), os.path.basename(filename_dic)]
-    preprocessed_images = [segmented_image_fl, segmented_image_dic]
+    image_file_names = [os.path.basename(filename_GFP), os.path.basename(filename_DsRed)]
+    preprocessed_images = [segmented_image_GFP, segmented_image_DsRed]
     new_file_names = aux_save_images(preprocessed_images, image_file_names, destination_folder)
     
     return pd.Series([os.path.splitext(image_file_name)[0], new_file_names[0], new_file_names[1]])
@@ -189,7 +189,8 @@ def segmentation_with_optimized_thresh(image, threshold = 1.05, max_iter = 200, 
             segm_fract = np.sum(test_thresholded)/test_thresholded.size
             if segm_fract > fraction_range[1]:
                 step = 0.1*step
-                
+    print(count_iter)
+    print(segm_fract)
     return test_thresholded
 
 def image_padding(image, padding = 20):
@@ -200,21 +201,15 @@ def image_padding(image, padding = 20):
     return padded_image
 
 def clean_up_segmented_image(binary_image, dilation_r = 2, closing_r1 = 4, closing_r2 = 8):
-    dilated = morphology.dilation(binary_image, morphology.ball(dilation_r))
-
-    # dilate and erode again to fill small holes:
-    filled = morphology.closing(dilated, morphology.ball(closing_r1))
+    
+    filled = morphology.closing(binary_image, morphology.ball(closing_r1))
 
     label_image = label(filled)
     rp = regionprops(label_image)
     size = max([i.area for i in rp])
 
-    biggest_object = morphology.remove_small_objects(label_image, min_size=size-1)>0
-    biggest_object = morphology.erosion(biggest_object, morphology.ball(dilation_r))
-    
-    # fill small holes in the segmented image:
-    biggest_object = morphology.closing(biggest_object, morphology.ball(closing_r2))
-    
+    biggest_object = morphology.remove_small_objects(label_image, min_size=size/10)>0
+
     # Skeletonize the segmented image, slice by slice:
     skeletonized = skeletonize_on_slices(biggest_object)
     
@@ -225,27 +220,27 @@ def clean_up_segmented_image(binary_image, dilation_r = 2, closing_r1 = 4, closi
     uni_down_pcd = skeleton_pcd.uniform_down_sample(every_k_points=3)
     cleaned_pcd, ind = uni_down_pcd.remove_radius_outlier(nb_points=4, radius=3)
     cleaned_pcd, ind = cleaned_pcd.remove_radius_outlier(nb_points=4, radius=3)
-    
+    # downsampling
+    cleaned_pcd = cleaned_pcd.voxel_down_sample(voxel_size=12)
+
     # Create a mesh that fits through the cleaned points to fill potential holes:
     cleaned_pcd.estimate_normals()
     cleaned_pcd.orient_normals_consistent_tangent_plane(k=30)
     
-    poisson_mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(cleaned_pcd, depth=5, width=0, scale=1.2, linear_fit=True)[0]
+    radii = [40]
+    ball_mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(cleaned_pcd, o3d.utility.DoubleVector(radii))
     bbox = cleaned_pcd.get_axis_aligned_bounding_box()
-    p_mesh_crop = poisson_mesh.crop(bbox)
-        
-    # Resample the mesh and create the final point cloud including both points
-    # from the original cleaned pcd and those obtained from the fitting mesh:
+    ball_mesh_crop = ball_mesh.crop(bbox)
+    ball_mesh_crop.paint_uniform_color([1,1,1])
+
+    # Resample the mesh and create the final point cloud:
     
-    resampled_pcd = p_mesh_crop.sample_points_uniformly(number_of_points=40000)
-    final_pcd = o3d.geometry.PointCloud()
-    final_pcd.points = o3d.utility.Vector3dVector( np.concatenate((cleaned_pcd.points, resampled_pcd.points), axis=0) )
+    final_pcd = ball_mesh_crop.sample_points_uniformly(number_of_points = 5000)
 
     final_pcd_values = np.ones(np.asarray(final_pcd.points).shape[0])
     final_image = pcd_to_image(final_pcd, final_pcd_values, binary_image.shape)
     final_image = morphology.dilation(final_image, morphology.ball(3))
 
-    
     return final_image
 
 def skeletonize_on_slices(image_3d):

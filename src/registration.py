@@ -1,8 +1,8 @@
 ##################################################
-## Function(s) to segment cell nuclei in preprocessed wing images
+## Function(s) to register 3d stacks of fly abdomens
 ##################################################
 ## Author: Stefano
-## Version: September/October 2021
+## Version: December 2021/March 2022
 ##################################################
 
 import pandas as pd

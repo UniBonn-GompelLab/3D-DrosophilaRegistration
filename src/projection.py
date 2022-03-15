@@ -7,8 +7,6 @@ Created on Mon Nov 29 15:32:43 2021
 """
 
 ##################################################
-## Function(s) to segment cell nuclei in preprocessed wing images
-##################################################
 ## Author: Stefano
 ## Version: September/October 2021
 ##################################################
