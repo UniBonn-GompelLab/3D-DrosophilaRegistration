@@ -17,9 +17,10 @@ from scipy import stats
 import matplotlib.pyplot as plt
 from tifffile import imsave
 from tqdm import tqdm
-from src.aux_pcd_functions  import pcd_to_image, image_to_pcd
-
-
+if __name__ == '__main__':
+    from aux_pcd_functions  import pcd_to_image, image_to_pcd
+else:
+    from src.aux_pcd_functions  import pcd_to_image, image_to_pcd
 
 def preprocess_and_segment_images(
     
@@ -64,7 +65,10 @@ def preprocess_and_segment_images(
     if only_on_new_files == False:
         for f in os.listdir(destination_folder):
             os.remove(os.path.join(destination_folder, f))
-            
+    
+    # Look for the database file of the preprocessed images to check which 
+    # images have been already processed:
+        
     try: 
         DatasetInfoPreproc = pd.read_excel(os.path.join(destination_folder,database_filename))
     except:
@@ -135,9 +139,15 @@ def preprocess_and_save(image_file_name, folder, binning, bit_depth, destination
     image_TL = image_TL*65536/max_value
     
     # Binning:
-    image_downscaled = transform.downscale_local_mean(image_GFP, binning)[1:-2,1:-2,1:-2]
-    image_DsRed_downscaled = block_reduce(image_DsRed, binning, np.max, cval=0)[1:-2,1:-2,1:-2]
-    image_TL_downscaled = block_reduce(image_TL, binning, np.max, cval=0)[1:-2,1:-2,1:-2]
+    new_image_shape = [int(image_DsRed.shape[i]/binning[i]) for i in range(3)]
+
+    image_downscaled = transform.resize(image_GFP, new_image_shape, preserve_range = True)
+    image_DsRed_downscaled = transform.resize(image_DsRed, new_image_shape, preserve_range = True)
+    image_TL_downscaled = transform.resize(image_TL, new_image_shape, preserve_range = True)
+
+#    image_downscaled = transform.downscale_local_mean(image_GFP, binning)[1:-2,1:-2,1:-2]
+#    image_DsRed_downscaled = block_reduce(image_DsRed, binning, np.max, cval=0)[1:-2,1:-2,1:-2]
+#    image_TL_downscaled = block_reduce(image_TL, binning, np.max, cval=0)[1:-2,1:-2,1:-2]
 
     # Segmentation:
     thresholded = segmentation_with_optimized_thresh(image_downscaled)
@@ -269,10 +279,9 @@ def skeletonize_on_slices(image_3d):
 if __name__ == '__main__':
     
     ## %matplotlib qt  ##
-    destination_folder = "/media/ceolin/Data/Lab Gompel/Projects/Fly_Abdomens/data/02_preprocessed"
-    read_folder = "/media/ceolin/Data/Lab Gompel/Projects/Fly_Abdomens/data/01_raw"
-    
-    preprocess_and_segment_images(read_folder, destination_folder)
+    read_data_folder = "../../data_2/01_raw"
+    destination_folder = "../../data_2/02_preprocessed"
+    preprocess_and_segment_images(read_data_folder, destination_folder, binning = [2,2,2] , bit_depth = 12)
     #database_name = "DatasetInformation_Part1.xlsx"
 
     
