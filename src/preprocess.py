@@ -24,7 +24,7 @@ else:
 
 def preprocess_and_segment_images(
     
-    read_folder, destination_folder, binning=(18,6,6), bit_depth=8, only_on_new_files = True,\
+    read_folder, destination_folder, downscaling=(2,2,2), bit_depth=8, only_on_new_files = True,\
     database_filename = 'DatasetInformation.xlsx'):
     
     '''
@@ -34,8 +34,8 @@ def preprocess_and_segment_images(
         path of the folder containing the raw data.
     destination_folder : str
         path of the folder where preprocessed images will be saved.
-    binning : (int, int, int)
-        binning to apply to the images along z, x, y, in pixels.
+    downscaling: (float, float, float)
+        downscaling factor along z, x, y, in pixels.
     bit_depth: int
         bit depth of raw data
     database_filename : str, optional
@@ -81,7 +81,7 @@ def preprocess_and_segment_images(
 
     new_columns = ["experiment", "filename_gfp", "filename_dsred", "filename_tl"]
     raw_data_df[new_columns] = raw_data_df.progress_apply(lambda row: \
-    preprocess_and_save(row["image file name"], row["folder"], binning, bit_depth, destination_folder, DatasetInfoPreproc), axis=1)
+    preprocess_and_save(row["image file name"], row["folder"], downscaling, bit_depth, destination_folder, DatasetInfoPreproc), axis=1)
     
     #raw_data_df = raw_data_df.explode('image file name')
     raw_data_df = raw_data_df[raw_data_df['experiment'].notna()]
@@ -112,7 +112,7 @@ def create_raw_images_database(root_folder, database_filename = 'DatasetInformat
     return raw_data_df
 
 
-def preprocess_and_save(image_file_name, folder, binning, bit_depth, destination_folder, DatasetInfoPreproc):
+def preprocess_and_save(image_file_name, folder, downscaling, bit_depth, destination_folder, DatasetInfoPreproc):
     filename_GFP = os.path.join(folder,'C1-'+image_file_name)
     filename_DsRed = os.path.join(folder,'C2-'+image_file_name)
     filename_TL = os.path.join(folder,'C3-'+image_file_name)
@@ -139,7 +139,7 @@ def preprocess_and_save(image_file_name, folder, binning, bit_depth, destination
     image_TL = image_TL*65536/max_value
     
     # Binning:
-    new_image_shape = [int(image_DsRed.shape[i]/binning[i]) for i in range(3)]
+    new_image_shape = [int(image_DsRed.shape[i]/downscaling[i]) for i in range(3)]
 
     image_downscaled = transform.resize(image_GFP, new_image_shape, preserve_range = True)
     image_DsRed_downscaled = transform.resize(image_DsRed, new_image_shape, preserve_range = True)
