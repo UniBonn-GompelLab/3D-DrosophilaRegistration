@@ -11,7 +11,6 @@ from skimage import io, transform
 import numpy as np
 import open3d as o3d
 import copy
-import napari
 from skimage import morphology
 from skimage.measure import label, regionprops, block_reduce
 from scipy import stats
@@ -69,14 +68,14 @@ def preprocess_and_segment_images(
     try: 
         DatasetInfoPreproc = pd.read_excel(os.path.join(destination_folder,database_filename))
     except:
-        DatasetInfoPreproc = pd.DataFrame(columns = ["experiment", "filename_fl", "filename_tl"])
+        DatasetInfoPreproc = pd.DataFrame(columns = ["experiment", "filename_gfp", "filename_dsred", "filename_tl"])
         
     # run row by row over database of files, downsample, segment and save the images,
     # return filenames to create new DatasetInformation.xlsx file in the destination folder
    
     print("Preprocessing of raw images in progress:")
 
-    new_columns = ["experiment", "filename_fl", "filename_tl"]
+    new_columns = ["experiment", "filename_gfp", "filename_dsred", "filename_tl"]
     raw_data_df[new_columns] = raw_data_df.progress_apply(lambda row: \
     preprocess_and_save(row["image file name"], row["folder"], binning, bit_depth, destination_folder, DatasetInfoPreproc), axis=1)
     
@@ -110,29 +109,35 @@ def create_raw_images_database(root_folder, database_filename = 'DatasetInformat
 
 
 def preprocess_and_save(image_file_name, folder, binning, bit_depth, destination_folder, DatasetInfoPreproc):
-
     filename_GFP = os.path.join(folder,'C1-'+image_file_name)
     filename_DsRed = os.path.join(folder,'C2-'+image_file_name)
-    
+    filename_TL = os.path.join(folder,'C3-'+image_file_name)
     if os.path.splitext(image_file_name)[0] in DatasetInfoPreproc['experiment'].values:
-        return pd.Series([os.path.splitext(image_file_name)[0], 'Preprocessed_C1-'+image_file_name,'Preprocessed_C2-'+image_file_name])
+        return pd.Series([os.path.splitext(image_file_name)[0], 'Preprocessed_C1-'+image_file_name,'Preprocessed_C2-'+image_file_name, 'Preprocessed_C3-'+image_file_name])
+    
     try:
         image_GFP = io.imread(filename_GFP)
         image_DsRed = io.imread(filename_DsRed)
+        image_TL = io.imread(filename_TL)
     except:
+        print("File not found")
+        print(filename_TL)
         image_GFP = float("NaN")
         image_DsRed = float("NaN")
-        return pd.Series([float("NaN"), float("NaN"), float("NaN")])
+        image_TL = float("NaN")
+        return pd.Series([float("NaN"), float("NaN"), float("NaN"), float("NaN")])
     
     max_value = 2**bit_depth-1
   
     # rescale images to 16bits:
     image_DsRed = image_DsRed*65536/max_value
     image_GFP = image_GFP*65536/max_value
-
+    image_TL = image_TL*65536/max_value
+    
     # Binning:
     image_downscaled = transform.downscale_local_mean(image_GFP, binning)[1:-2,1:-2,1:-2]
     image_DsRed_downscaled = block_reduce(image_DsRed, binning, np.max, cval=0)[1:-2,1:-2,1:-2]
+    image_TL_downscaled = block_reduce(image_TL, binning, np.max, cval=0)[1:-2,1:-2,1:-2]
 
     # Segmentation:
     thresholded = segmentation_with_optimized_thresh(image_downscaled)
@@ -140,19 +145,22 @@ def preprocess_and_save(image_file_name, folder, binning, bit_depth, destination
     # Padding:
     image_downscaled = image_padding(image_downscaled)
     image_DsRed_downscaled = image_padding(image_DsRed_downscaled)
+    image_TL_downscaled = image_padding(image_TL_downscaled)
     thresholded  = image_padding(thresholded)
     
     # Clean up the segmentation with morphological transformations:
     thresholded = clean_up_segmented_image(thresholded)
     
-    segmented_image_GFP = (image_downscaled+1)*thresholded
+    segmented_image_GFP = (image_downscaled)*thresholded
+    thresholded = segmented_image_GFP>0
     segmented_image_DsRed = (image_DsRed_downscaled+1)*thresholded
-
-    image_file_names = [os.path.basename(filename_GFP), os.path.basename(filename_DsRed)]
-    preprocessed_images = [segmented_image_GFP, segmented_image_DsRed]
+    segmented_image_TL = (image_TL_downscaled+1)*thresholded
+    
+    image_file_names = [os.path.basename(filename_GFP), os.path.basename(filename_DsRed), os.path.basename(filename_TL)]
+    preprocessed_images = [segmented_image_GFP, segmented_image_DsRed, segmented_image_TL ]
     new_file_names = aux_save_images(preprocessed_images, image_file_names, destination_folder)
     
-    return pd.Series([os.path.splitext(image_file_name)[0], new_file_names[0], new_file_names[1]])
+    return pd.Series([os.path.splitext(image_file_name)[0], new_file_names[0], new_file_names[1], new_file_names[2]])
 
 def aux_save_images(images,names,folder):
     file_names_list = list()
@@ -168,7 +176,7 @@ def aux_save_images(images,names,folder):
     return list(file_names_list)
 
 
-def segmentation_with_optimized_thresh(image, threshold = 1.05, max_iter = 200, fraction_range = [0.03, 0.08]):
+def segmentation_with_optimized_thresh(image, threshold = 1.05, max_iter = 200, fraction_range = [0.025, 0.040]):
     test_thresholded = image > threshold*np.mean(image)
     segm_fract = np.sum(test_thresholded)/test_thresholded.size
     step = 0.01
@@ -189,8 +197,8 @@ def segmentation_with_optimized_thresh(image, threshold = 1.05, max_iter = 200, 
             segm_fract = np.sum(test_thresholded)/test_thresholded.size
             if segm_fract > fraction_range[1]:
                 step = 0.1*step
-    print(count_iter)
-    print(segm_fract)
+    #print(count_iter)
+    #print(segm_fract)
     return test_thresholded
 
 def image_padding(image, padding = 20):
@@ -200,7 +208,7 @@ def image_padding(image, padding = 20):
     padded_image[padding:-padding,padding:-padding,padding:-padding] = image
     return padded_image
 
-def clean_up_segmented_image(binary_image, dilation_r = 2, closing_r1 = 4, closing_r2 = 8):
+def clean_up_segmented_image(binary_image, closing_r1 = 4, closing_r2 = 8):
     
     filled = morphology.closing(binary_image, morphology.ball(closing_r1))
 
@@ -220,6 +228,7 @@ def clean_up_segmented_image(binary_image, dilation_r = 2, closing_r1 = 4, closi
     uni_down_pcd = skeleton_pcd.uniform_down_sample(every_k_points=3)
     cleaned_pcd, ind = uni_down_pcd.remove_radius_outlier(nb_points=4, radius=3)
     cleaned_pcd, ind = cleaned_pcd.remove_radius_outlier(nb_points=4, radius=3)
+    
     # downsampling
     cleaned_pcd = cleaned_pcd.voxel_down_sample(voxel_size=12)
 
@@ -227,19 +236,20 @@ def clean_up_segmented_image(binary_image, dilation_r = 2, closing_r1 = 4, closi
     cleaned_pcd.estimate_normals()
     cleaned_pcd.orient_normals_consistent_tangent_plane(k=30)
     
-    radii = [40]
+    radii = [60]
     ball_mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(cleaned_pcd, o3d.utility.DoubleVector(radii))
     bbox = cleaned_pcd.get_axis_aligned_bounding_box()
     ball_mesh_crop = ball_mesh.crop(bbox)
-    ball_mesh_crop.paint_uniform_color([1,1,1])
 
     # Resample the mesh and create the final point cloud:
-    
-    final_pcd = ball_mesh_crop.sample_points_uniformly(number_of_points = 5000)
+    resampled_pcd = ball_mesh_crop.sample_points_uniformly(number_of_points = 5000)
+    final_pcd = o3d.geometry.PointCloud()
+    final_pcd.points = o3d.utility.Vector3dVector( np.concatenate((cleaned_pcd.points, resampled_pcd.points), axis=0) )
+
 
     final_pcd_values = np.ones(np.asarray(final_pcd.points).shape[0])
     final_image = pcd_to_image(final_pcd, final_pcd_values, binary_image.shape)
-    final_image = morphology.dilation(final_image, morphology.ball(3))
+    final_image = morphology.dilation(final_image, morphology.ball(10))
 
     return final_image
 

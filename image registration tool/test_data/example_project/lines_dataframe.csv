@@ -1,0 +1,12 @@
+Lmk1,Lmk2,Type,N,alpha
+LV2-end,LV2-LV3,dark,4,0.1
+LV3-end,LV3-ACV,dark,4,0.1
+LV4-end,LV4-PCV,dark,3,1
+LV5-end,LV5-PCV,dark,3,0.1
+LV5-PCV,LV6-LV5,dark,4,0.1
+LV4-PCV,LV4-ACV,dark,3,0.1
+LV3-ACV,LV2-LV3,dark,2,0.1
+LV3-end,LV2-end,dark,4,0.1
+LV3-end,LV4-end,dark,3,0.1
+LV4-end,LV5-end,dark,6,0.1
+LV3-end,LV2-end,dark,6,0.1

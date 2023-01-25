@@ -1,28 +1,39 @@
-##################################################
-## Function(s) to register 3d stacks of fly abdomens
-##################################################
-## Author: Stefano
-## Version: December 2021/March 2022
-##################################################
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Function(s) to register 3d stacks of fly abdomens
+
+@author: ceolin
+@last_update: September 2022
+"""
 
 import pandas as pd
 import os
+from io import StringIO
 from skimage import io, transform
 import numpy as np
 import open3d as o3d
 import copy
-import napari
+#import napari
 from skimage import morphology
 from skimage.measure import label, regionprops, block_reduce
 from scipy import stats, ndimage
 import matplotlib.pyplot as plt
 from tifffile import imsave
 from tqdm import tqdm
-from src.aux_pcd_functions  import pcd_to_image, image_to_pcd
+import sys
+import os
 
+if __name__ == '__main__':
+    from aux_pcd_functions  import pcd_to_image, image_to_pcd
+else:
+    from src.aux_pcd_functions  import pcd_to_image, image_to_pcd
+    
+    
 def registration_of_abdomens_3D(
         preprocessed_data_df, preprocessed_folder, reference_fly_filename,\
-        abdomen_mask_filename, destination_folder):
+        abdomen_mask_filename, destination_folder, only_on_new_files = False, \
+        database_filename = 'DatasetInformation.xlsx'):
     '''
     Parameters
     ----------
@@ -47,68 +58,90 @@ def registration_of_abdomens_3D(
     tqdm.pandas()
     preprocessed_folder = os.path.join(preprocessed_folder,'')
     
-    # clean the destination directory:
 
-    for f in os.listdir(destination_folder):
-        os.remove(os.path.join(destination_folder, f))
+    # clean the destination directory:
+    if only_on_new_files == False:
+        for f in os.listdir(destination_folder):
+            os.remove(os.path.join(destination_folder, f))
+            
+    try: 
+        DatasetInfoRegistered = pd.read_excel(os.path.join(destination_folder,database_filename))
+    except:
+        DatasetInfoRegistered = pd.DataFrame(columns = ["image file name", "quality", "experiment", "construct",  "folder", "filename_gfp", "filename_dsred", "filename_tl"])
+
 
     print("Registration of 3D stacks in progress:")
     reference_fly = io.imread(reference_fly_filename)
     abdomen_mask = io.imread(abdomen_mask_filename)
-
-    preprocessed_data_df[["filename_fl", "filename_tl"]] = preprocessed_data_df.progress_apply(lambda row: \
-    register_and_save(row["filename_fl"], row["filename_tl"], preprocessed_folder, reference_fly, abdomen_mask, destination_folder), axis=1)
     
-    preprocessed_data_df["folder"] = destination_folder
-    preprocessed_data_df.to_excel(os.path.join(destination_folder,'DatasetInformation.xlsx'))
+    
+    with tqdm(total=preprocessed_data_df.shape[0]) as pbar:    
+        
+        for index, row in preprocessed_data_df.iterrows():
+        
+            result = register_and_save(row["image file name"], row["filename_gfp"], row["filename_dsred"], row["filename_tl"], preprocessed_folder, reference_fly, destination_folder, DatasetInfoRegistered)
+            
+            if result is not None:
+                temp_df = pd.concat([DatasetInfoRegistered, row.to_frame().transpose()], join = "outer", ignore_index=True)
+                temp_df = temp_df[DatasetInfoRegistered.columns]
+                DatasetInfoRegistered = temp_df
+                DatasetInfoRegistered.loc[DatasetInfoRegistered['image file name'] == row["image file name"], "filename_gfp"]= result[0]
+                DatasetInfoRegistered.loc[DatasetInfoRegistered['image file name'] == row["image file name"], "filename_dsred"] = result[1]
+                DatasetInfoRegistered.loc[DatasetInfoRegistered['image file name'] == row["image file name"], "filename_tl"]  = result[2]
+                DatasetInfoRegistered.loc[DatasetInfoRegistered['image file name'] == row["image file name"], "folder"] = destination_folder
+                DatasetInfoRegistered = DatasetInfoRegistered.reset_index(drop = True)
+                DatasetInfoRegistered.to_excel(os.path.join(destination_folder,'DatasetInformation.xlsx'), index = False)
+            
+            pbar.update(1)
+            
+        pbar.close()
 
     return
 
 
-def register_and_save(filename_fl, filename_tl, folder, reference_fly, abdomen_mask, destination_folder):
+def register_and_save(image_file_name, filename_gfp, filename_dsred, filename_tl, folder, reference_fly, destination_folder, DatasetInfoRegistered):
     
-    filename_fl = os.path.join(folder,filename_fl)
+    filename_gfp = os.path.join(folder,filename_gfp)
+    filename_dsred = os.path.join(folder,filename_dsred)
     filename_tl = os.path.join(folder,filename_tl)
     
+    if os.path.splitext(image_file_name)[0] in DatasetInfoRegistered['experiment'].values:
+        return None
+
     try:
-        Source_Image =  io.imread(filename_fl)
-        Source_TL  = io.imread(filename_tl)
+        Source_gfp =  io.imread(filename_gfp)
+        Source_dsred  = io.imread(filename_dsred)
+        Source_tl  = io.imread(filename_tl)
     except:
         print("File not found!")
-        Source_Image = float("NaN")
-        Source_TL  = float("NaN")
+        return None
 
-    source, Source_values = image_to_pcd(Source_Image)
-    source_TL, Source_values_TL = image_to_pcd(Source_TL)
+    #print("******************")
+    #print(image_file_name)
+    source, source_values = image_to_pcd(Source_gfp)
+    source_dsred, source_values_dsred = image_to_pcd(Source_dsred)
+    source_tl, source_values_tl = image_to_pcd(Source_tl)
 
-    target, Target_values = image_to_pcd(reference_fly)
-    mask_pcd, mask_values = image_to_pcd(abdomen_mask)
+    target, target_values = image_to_pcd(reference_fly)
 
-    source = prealignment(source,target)
-
-    # Refine registration with ICP:
+    #source = prealignment(source,target)
+    source = _manual_registration(source, source_values, target, target_values)
     
-    result_icp = refine_registration(source, target, 50)
+    # Refine registration with point to plane ICP:
+    #result_ptp_icp = refine_registration_PointToPlane(source, target, threshold = 50 , downsampling_radius = 5)
     after_icp = copy.deepcopy(source)
-    after_icp.transform(result_icp.transformation)
+    #after_icp.transform(result_ptp_icp.transformation)
+    #draw_registration_result(after_icp, target, np.identity(4))
     
-    registered_source_image = pcd_to_image(after_icp,Source_values,reference_fly.shape)
-    registered_source_image_TL = pcd_to_image(after_icp,Source_values_TL,reference_fly.shape)
-    
-    #draw_registration_result(after_icp, target, np.eye(4))
-    
-    # Apply mask to select only the fly abdomen:
-    final_image = registered_source_image#*abdomen_mask
-    final_image_TL = registered_source_image_TL#*abdomen_mask
-    
-    #final_pcd, final_values = image_to_pcd(final_image)
-    #final_pcd_TL, final_values_TL = image_to_pcd(final_image_TL)
+    registered_source_image = pcd_to_image(after_icp, source_values, reference_fly.shape)
+    registered_source_image_dsred = pcd_to_image(after_icp, source_values_dsred, reference_fly.shape)
+    registered_source_image_tl = pcd_to_image(after_icp, source_values_tl, reference_fly.shape)
 
-    image_file_names = [os.path.basename(filename_fl), os.path.basename(filename_tl)]
-    registered_images = [final_image, final_image_TL]
+    image_file_names = [os.path.basename(filename_gfp), os.path.basename(filename_dsred), os.path.basename(filename_tl)]
+    registered_images = [registered_source_image, registered_source_image_dsred, registered_source_image_tl]
     new_file_names = aux_save_images(registered_images, image_file_names, destination_folder)
     
-    return pd.Series([new_file_names[0], new_file_names[1]])
+    return pd.Series([new_file_names[0], new_file_names[1], new_file_names[2]])
 
     
 def aux_save_images(images,names,folder):
@@ -132,92 +165,214 @@ def draw_registration_result(source, target, transformation):
     source_temp.transform(transformation)
     o3d.visualization.draw_geometries([source_temp, target_temp])
 
-def prealignment(pcd, target_pcd):
-    target_mean, target_cov = target_pcd.compute_mean_and_covariance()
-    pcd_mean, pcd_cov = pcd.compute_mean_and_covariance()
-    _ , pcd_eigv = np.linalg.eig(pcd_cov)
+def _manual_registration(source, source_values, target, target_values):
+    
+    source_temp = copy.deepcopy(source)
+    target_temp = copy.deepcopy(target)
+    
+    bw_colors = 3*source_values/np.max(source_values)
+    source_temp.colors = o3d.utility.Vector3dVector(np.asarray([bw_colors, bw_colors, bw_colors]).T)
 
-    # transform to a base given by the first eigenvector (a,b,c), (0,0,1) and their vector product: (b,-a,0)
-    b = pcd_eigv[1,0]
-    c = pcd_eigv[2,0]
-    b, c = b/(b**2+c**2)**0.5, c/(b**2+c**2)**0.5
-    temp = np.asarray([[1.0, 0.0, 0.0], [0.0, b, c], [0.0, c, -b]])
-    transformation_pcd_1 = np.eye(4)
-    transformation_pcd_1[:3, :3] = np.linalg.inv(temp)
+    bw_colors = 3*target_values/np.max(target_values)
+    target_temp.colors = o3d.utility.Vector3dVector(np.asarray([bw_colors, bw_colors, bw_colors]).T)
+
+    #target_temp = target_temp.uniform_down_sample(every_k_points=10)
+    #source_temp = source_temp.uniform_down_sample(every_k_points=10)
     
-    temp = np.asarray([[1.0, 0.0, 0.0], [0.0, -b, -c], [0.0, -c, b]])
-    transformation_pcd_2 = np.eye(4)
-    transformation_pcd_2[:3, :3] = np.linalg.inv(temp)
+    # pick points from two point clouds and builds correspondences
+    picked_id_source = pick_points(source_temp)
+    picked_id_target = pick_points(target_temp)
     
-    test_1 = copy.deepcopy(pcd)
-    test_1.translate(-pcd_mean)
-    test_1.transform(transformation_pcd_1)
-    test_1.translate(target_mean)
     
-    distances = test_1.compute_point_cloud_distance(target_pcd)
-    dist_1 = np.sum(np.asarray(distances))
+    assert (len(picked_id_source) >= 3 and len(picked_id_target) >= 3)
+    assert (len(picked_id_source) == len(picked_id_target))
+    corr = np.zeros((len(picked_id_source), 2))
+    corr[:, 0] = picked_id_source
+    corr[:, 1] = picked_id_target
+
+    # estimate transformation:
+    p2p = o3d.pipelines.registration.TransformationEstimationPointToPoint(with_scaling=True)
+    trans_init = p2p.compute_transformation(source, target, o3d.utility.Vector2iVector(corr))
+    source_transformed = copy.deepcopy(source)
+    source_transformed.transform(trans_init)
     
-    test_2 = copy.deepcopy(pcd)
-    test_2.translate(-pcd_mean)
-    test_2.transform(transformation_pcd_2)
-    test_2.translate(target_mean)
+    draw_registration_result(source_transformed, target, np.identity(4))
     
-    distances = test_2.compute_point_cloud_distance(target_pcd)
-    dist_2 = np.sum(np.asarray(distances))
+    return source_transformed
+
+
+def pick_points(pcd):
+    # These are used to suppress the printed output from Open3D whil epicking points:
+    stdout_old = sys.stdout
+    sys.stdout = StringIO()
+    # Create Visualizer with editing:
+    vis = o3d.visualization.VisualizerWithEditing()
+    vis.create_window()
+    vis.add_geometry(pcd)
+    # user picks points
+    result = vis.run()  
+    vis.destroy_window()
+    # This restores the output:
+    sys.stdout = stdout_old
+    return vis.get_picked_points()
+
+# def refine_registration(source, target, threshold):
+#     result = o3d.pipelines.registration.registration_icp(
+#         source, target, threshold, np.identity(4),
+#         o3d.pipelines.registration.TransformationEstimationPointToPoint(with_scaling=False))
+#     return result
+
+def refine_registration_PointToPlane(source, target, threshold, downsampling_radius):
+    """
+    Parameters
+    ----------
+    source : pcd object
+        source point cloud.
+    target : pcd object
+        target point cloud.
+    threshold : int
+        maximum distance between corresponding points.
+    downsampling_radius : int
+        radius used to downsample the point clouds.
+
+    Returns
+    -------
+    result : o3d transformation object
+        estimated transformation.
+
+    """
+    # downsampling to accelerate computation:
+    source_down = source.voxel_down_sample(downsampling_radius)
+    target_down = target.voxel_down_sample(downsampling_radius)
     
-    if dist_1 < dist_2:
-        return test_1
-    else:
-        return test_2
+    # computing the normals for each point:
+    source_down.estimate_normals()
+    source_down.orient_normals_consistent_tangent_plane(k=30)
+
+    target_down.estimate_normals()
+    target_down.orient_normals_consistent_tangent_plane(k=30)
     
-def refine_registration(source, target, threshold):
     result = o3d.pipelines.registration.registration_icp(
-        source, target, threshold, np.identity(4),
-        o3d.pipelines.registration.TransformationEstimationPointToPoint(with_scaling=False))
+        source_down, target_down, threshold, np.identity(4),
+        o3d.pipelines.registration.TransformationEstimationPointToPlane(),
+        o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=500))
+    
     return result
 
 
 
+# def prealignment(source, target_pcd, force_flipping = False):
+#     target_mean, target_cov = target_pcd.compute_mean_and_covariance()
+#     source_mean, source_cov = source.compute_mean_and_covariance()
+#     _ , source_eigv = np.linalg.eig(source_cov)
+
+#     # transform to a base given by the x-y projection of the first eigenvector (0,b,c), 
+#     # the z-direction (0,0,1) and their vector product: (0,c,-b)
+    
+#     b = source_eigv[1,0]
+#     c = source_eigv[2,0]
+#     b, c = b/(b**2+c**2)**0.5, c/(b**2+c**2)**0.5
+#     temp = np.asarray([[1.0, 0.0, 0.0], [0.0, b, c], [0.0, c, -b]])
+#     transformation_1 = np.eye(4)
+#     transformation_1[:3, :3] = np.linalg.inv(temp)
+    
+#     temp = np.asarray([[1.0, 0.0, 0.0], [0.0, -b, -c], [0.0, -c, b]])
+#     transformation_2 = np.eye(4)
+#     transformation_2[:3, :3] = np.linalg.inv(temp)
+    
+#     test_1 = copy.deepcopy(source)
+#     test_1.translate(-source_mean)
+#     test_1.transform(transformation_1)
+#     test_1.translate(target_mean)
+    
+#     distances = test_1.compute_point_cloud_distance(target_pcd)
+#     dist_1 = np.sum(np.asarray(distances))
+    
+#     test_2 = copy.deepcopy(source)
+#     test_2.translate(-source_mean)
+#     test_2.transform(transformation_2)
+#     test_2.translate(target_mean)
+    
+#     distances = test_2.compute_point_cloud_distance(target_pcd)
+#     dist_2 = np.sum(np.asarray(distances))
+
+    
+#     orientation = _choose_best_orientation_gui(test_1, test_2, target_pcd)
+
+#     if orientation == 1:
+#         return test_1
+#     else:
+#         return test_2
+    
+# def _choose_best_orientation_gui(source_1, source_2, target):
+
+#     source_1_temp = copy.deepcopy(source_1)
+#     source_2_temp = copy.deepcopy(source_2)
+#     target_temp = copy.deepcopy(target)
+    
+#     source_1_temp =  source_1_temp.voxel_down_sample(voxel_size=10)
+#     source_2_temp =  source_2_temp.voxel_down_sample(voxel_size=10)
+#     target_temp =  target_temp.voxel_down_sample(voxel_size=10)
+    
+#     source_1_temp.paint_uniform_color([1, 0.706, 0])
+#     source_2_temp.paint_uniform_color([1, 0.606, 0])
+#     target_temp.paint_uniform_color([0, 0.651, 0.929])
+    
+    
+#     vis = o3d.visualization.VisualizerWithKeyCallback()
+    
+#     def press_1(vis, action, mods):
+#         nonlocal orientation
+#         orientation = 1
+#         try:
+#             vis.remove_geometry(source_2_temp)
+#         except:
+#             pass
+            
+#         vis.add_geometry(source_1_temp)
+#         #vis.update_geometry()
+#         return
+    
+#     def press_2(vis, action, mods):
+#         nonlocal orientation
+#         orientation = 2
+#         try:
+#             vis.remove_geometry(source_1_temp)
+#         except:
+#             pass
+#         vis.add_geometry(source_2_temp)
+#         #vis.update_geometry()
+#         return
+
+#     # key_action_callback will be triggered when there's a keyboard press, release or repeat event
+#     # for on of the following keys, correspondence based on GLFW keyboard keys 
+#     # (https://www.glfw.org/docs/latest/group__keys.html) :
+#     vis.register_key_action_callback(49, press_1)  # pressing key 1
+#     vis.register_key_action_callback(50, press_2)  # pressing key 2
+
+#     vis.create_window()
+    
+#     orientation = 1
+#     vis.add_geometry(source_1_temp)
+#     vis.add_geometry(target_temp)
+#     vis.run()
+    
+#     return orientation
+
+
+
+
+
 if __name__ == '__main__':
-    
-    #read_folder = "/media/ceolin/Data/Lab Gompel/Projects/Fly_Abdomens/data/02_preprocessed"
-    #destination_folder = "/media/ceolin/Data/Lab Gompel/Projects/Fly_Abdomens/data/03_registered"
-    reference_fly_filename = "/media/ceolin/Data/Lab Gompel/Projects/Fly_Abdomens/data/References_and_masks/Aligned_Reference.tif"
-    abdomen_mask_file = "/media/ceolin/Data/Lab Gompel/Projects/Fly_Abdomens/data/References_and_masks/Abdomen_Mask.tif"
-    image_file = "/media/ceolin/Data/Lab Gompel/Projects/Fly_Abdomens/data/02_preprocessed/Preprocessed_C1-20190126 - Experiment_A0B0_female1.tif"
-    image_file_2 = "/media/ceolin/Data/Lab Gompel/Projects/Fly_Abdomens/data/02_preprocessed/Preprocessed_C2-20190126 - Experiment_A0B0_female1.tif"
 
-    #df_name = "DatasetInformation.xlsx"
-    #df = pd.read_excel(os.path.join(read_folder,df_name))
-    #registration_of_abdomens_3D(df, read_folder, reference_fly_filename, abdomen_mask_file, destination_folder)
-    Reference_Image = io.imread(reference_fly_filename)
-    Abdomen_Mask = io.imread(abdomen_mask_file)
-
-    Source_Image = io.imread(image_file)
     
-    Source_TL = io.imread(image_file_2)
-    source, Source_values = image_to_pcd(Source_Image)
-    source_TL, Source_values_TL = image_to_pcd(Source_TL)
-
-    target, Target_values = image_to_pcd(Reference_Image)
-
-    mask_pcd, mask_values = image_to_pcd(Abdomen_Mask)
-    source = prealignment(source,target)
-    # Refine registration with ICP:
+    read_folder = "/media/ceolin/Data/Lab Gompel/Projects/Fly_Abdomens/data_2/02_preprocessed"
+    destination_folder = "/media/ceolin/Data/Lab Gompel/Projects/Fly_Abdomens/data_2/03_registered"
     
-    result_icp = refine_registration(source, target, 50)
-    after_icp = copy.deepcopy(source)
-    after_icp.transform(result_icp.transformation)
+    reference_fly_filename = "/media/ceolin/Data/Lab Gompel/Projects/Fly_Abdomens/data_2/References_and_masks/Reference_abdomen_2_2_2.tif"
+    abdomen_mask_file = "/media/ceolin/Data/Lab Gompel/Projects/Fly_Abdomens/data_2/References_and_masks/Reference_abdomen_mask_thick_2_2_2.tif"
     
-    registered_source_image = pcd_to_image(after_icp,Source_values,Reference_Image.shape)
-    registered_source_image_TL = pcd_to_image(after_icp,Source_values_TL,Reference_Image.shape)
+    df_name = "DatasetInformation.xlsx"
     
-    draw_registration_result(after_icp, target, np.eye(4))
-    
-    # Apply mask to select only the fly abdomen:
-    registered_source_image = pcd_to_image(after_icp,Source_values,Reference_Image.shape)
-    final_image = registered_source_image*Abdomen_Mask
-    final_image_TL = registered_source_image_TL*Abdomen_Mask
-    
-    final_pcd, final_values = image_to_pcd(final_image)
-    final_pcd_TL, final_values_TL = image_to_pcd(final_image_TL)
+    preprocessed_df = pd.read_excel(os.path.join(read_folder,df_name))
+    registration_of_abdomens_3D(preprocessed_df, read_folder, reference_fly_filename, abdomen_mask_file, destination_folder, only_on_new_files = True)
