@@ -148,7 +148,12 @@ def preprocess_and_save(image_file_name, folder, downscaling, bit_depth, destina
 
     # Segmentation:
     thresholded = segmentation_with_optimized_thresh(image_GFP_downscaled)
-
+    
+    # Make sure there are no zero pixels in the original image:
+    image_GFP_downscaled = image_GFP_downscaled
+    image_DsRed_downscaled = image_DsRed_downscaled
+    image_TL_downscaled = image_TL_downscaled
+        
     # Padding:
     image_GFP_downscaled    = image_padding(image_GFP_downscaled)
     image_DsRed_downscaled  = image_padding(image_DsRed_downscaled)
@@ -159,9 +164,9 @@ def preprocess_and_save(image_file_name, folder, downscaling, bit_depth, destina
     thresholded = clean_up_segmented_image(thresholded, image_GFP_downscaled)
     
     # Apply the mask (thresholded image) to all channels:
-    segmented_image_GFP = (image_GFP_downscaled+1)*thresholded
-    segmented_image_DsRed = (image_DsRed_downscaled+1)*thresholded
-    segmented_image_TL = (image_TL_downscaled+1)*thresholded
+    segmented_image_GFP = (image_GFP_downscaled)*thresholded
+    segmented_image_DsRed = (image_DsRed_downscaled)*thresholded
+    segmented_image_TL = (image_TL_downscaled)*thresholded
     
     # Save the segmented images:
     image_file_names = [os.path.basename(filename_GFP), os.path.basename(filename_DsRed), os.path.basename(filename_TL)]
@@ -207,7 +212,7 @@ def aux_save_images(images, names, prefix, folder):
     return list(file_names_list)
 
 
-def segmentation_with_optimized_thresh(image, threshold = 1.05, max_iter = 200, fraction_range = [0.025, 0.040]):
+def segmentation_with_optimized_thresh(image, threshold = 1.05, max_iter = 200, fraction_range = [0.04, 0.05]):
     """
     Iteratively look for a global threshold that results in a segmented volume
     covering a given fraction of the volume of an ndimensional numpy array.
