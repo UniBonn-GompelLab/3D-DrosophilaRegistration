@@ -4,7 +4,7 @@
 Function(s) to register 3d stacks of fly abdomens
 
 @author: ceolin
-@last_update: September 2022
+@last_update: February 2023
 """
 
 import pandas as pd
@@ -66,8 +66,6 @@ def registration_of_abdomens_3D(
 
     print("Registration of 3D stacks in progress:")
     reference_fly = io.imread(reference_fly_filename)
-    abdomen_mask = io.imread(abdomen_mask_filename)
-    
     
     with tqdm(total=preprocessed_data_df.shape[0]) as pbar:    
         
@@ -124,17 +122,14 @@ def register_and_save(image_file_name, filename_gfp, filename_dsred, filename_tl
     None.
 
     """ 
-    filename_gfp = os.path.join(folder,filename_gfp)
-    filename_dsred = os.path.join(folder,filename_dsred)
-    filename_tl = os.path.join(folder,filename_tl)
     
     if os.path.splitext(image_file_name)[0] in DatasetInfoRegistered['experiment'].values:
         return None
 
     try:
-        Source_gfp =  io.imread(filename_gfp)
-        Source_dsred  = io.imread(filename_dsred)
-        Source_tl  = io.imread(filename_tl)
+        Source_gfp   = io.imread( os.path.join(folder,filename_gfp) )
+        Source_dsred = io.imread( os.path.join(folder,filename_dsred) )
+        Source_tl    = io.imread( os.path.join(folder,filename_tl) )
     except:
         print("File not found!")
         return None
@@ -144,53 +139,66 @@ def register_and_save(image_file_name, filename_gfp, filename_dsred, filename_tl
     source_tl, source_values_tl = image_to_pcd(Source_tl)
     target, target_values = image_to_pcd(reference_fly)
 
+    # Open the interface for manual registration:
     transformation = _manual_registration(source_gfp, source_values_gfp, target, target_values)
-    
     source_gfp.transform(transformation)
     source_dsred.transform(transformation)
     source_tl.transform(transformation)
     
-    
     # Draw the results:
     draw_registration_result(source_gfp, target, np.identity(4))
     
+    # Convert the registered point clouds to image stacks:
     registered_source_image = pcd_to_image(source_gfp, source_values_gfp, reference_fly.shape)
     registered_source_image_dsred = pcd_to_image(source_dsred, source_values_dsred, reference_fly.shape)
     registered_source_image_tl = pcd_to_image(source_tl, source_values_tl, reference_fly.shape)
 
-    image_file_names = [os.path.basename(filename_gfp), os.path.basename(filename_dsred), os.path.basename(filename_tl)]
+    # Prepare filenames and save the registered images:
+    filename_GFP = os.path.join(folder,'C1-'+image_file_name)
+    filename_DsRed = os.path.join(folder,'C2-'+image_file_name)
+    filename_TL = os.path.join(folder,'C3-'+image_file_name)
+
+    image_file_names = [os.path.basename(filename_GFP), os.path.basename(filename_DsRed), os.path.basename(filename_TL)]
     registered_images = [registered_source_image, registered_source_image_dsred, registered_source_image_tl]
-    new_file_names = aux_save_images(registered_images, image_file_names, destination_folder)
+    new_file_names = aux_save_images(registered_images, image_file_names, "Registered_", destination_folder)
     
     return pd.Series([new_file_names[0], new_file_names[1], new_file_names[2]])
 
     
-def aux_save_images(images,names,folder):
+def aux_save_images(images, names, prefix, folder):
     """
+    Save a list of images in a folder adding a common prefix to the filenames.
+
     Parameters
     ----------
-    images : list of numpy arrays or single numpy array
-        3d images.
-    names : list of strings or single string
-        image file names.
-    folder : str
+    images : numpy array or list of numpy arrays
+        image(s) to save.
+    names : string or list of strings
+        root name(s) of the images.
+    prefix : string
+        prefix to add to the filename.
+    folder : string
         destination folder.
 
     Returns
     -------
-    None.
+    list
+        list of new file names.
 
     """
     file_names_list = list()
+    
     if isinstance(images, list):
         for count, image in enumerate(images):
-            filename = names[count].replace("Preprocessed_","Registered_" )
+            
+            filename = prefix+names[count]
             imsave(os.path.join(folder,filename), image)
             file_names_list.append(filename)
     else:
         filename = names
         imsave(os.path.join(folder,filename), image)
         file_names_list.append(filename)
+    
     return list(file_names_list)
 
 def draw_registration_result(source, target, transformation):
@@ -330,12 +338,12 @@ def refine_registration_PointToPlane(source, target, threshold, downsampling_rad
 if __name__ == '__main__':
 
     
-    read_folder = "/media/ceolin/Data/Lab Gompel/Projects/Fly_Abdomens/data_2/02_preprocessed"
-    destination_folder = "/media/ceolin/Data/Lab Gompel/Projects/Fly_Abdomens/data_2/03_registered"
+    read_folder = "../../data_2/02_preprocessed"
+    destination_folder = "../../data_2/03_registered"
     
-    reference_fly_filename = "/media/ceolin/Data/Lab Gompel/Projects/Fly_Abdomens/data_2/References_and_masks/Reference_abdomen_2_2_2.tif"
-    abdomen_mask_file = "/media/ceolin/Data/Lab Gompel/Projects/Fly_Abdomens/data_2/References_and_masks/Reference_abdomen_mask_thick_2_2_2.tif"
-    
+    reference_fly_filename = "../../data_2/References_and_masks/C1_Reference_iso.tif"
+    abdomen_mask_file = "../../data_2/References_and_masks/Reference_abdomen_mask_iso.tif"
+
     df_name = "DatasetInformation.xlsx"
     
     preprocessed_df = pd.read_excel(os.path.join(read_folder,df_name))

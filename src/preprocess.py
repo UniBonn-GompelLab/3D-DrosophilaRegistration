@@ -54,6 +54,7 @@ def preprocess_and_segment_images(
     '''
     
     tqdm.pandas()
+    
     # unify databases across folders:
     raw_data_df = create_raw_images_database(read_folder, database_filename)
     
@@ -181,19 +182,19 @@ def aux_save_images(images, names, prefix, folder):
 
     Parameters
     ----------
-    images : TYPE
-        DESCRIPTION.
-    names : TYPE
-        DESCRIPTION.
-    prefix : TYPE
-        DESCRIPTION.
-    folder : TYPE
-        DESCRIPTION.
+    images : numpy array or list of numpy arrays
+        image(s) to save.
+    names : string or list of strings
+        root name(s) of the images.
+    prefix : string
+        prefix to add to the filename.
+    folder : string
+        destination folder.
 
     Returns
     -------
-    TYPE
-        DESCRIPTION.
+    list
+        list of new file names.
 
     """
     file_names_list = list()
@@ -201,7 +202,7 @@ def aux_save_images(images, names, prefix, folder):
     if isinstance(images, list):
         for count, image in enumerate(images):
             
-            filename = 'Preprocessed_'+names[count]
+            filename = prefix+names[count]
             imsave(os.path.join(folder,filename), image)
             file_names_list.append(filename)
     else:
@@ -360,7 +361,7 @@ def clean_up_segmented_image(binary_image, image, closing_r = 4, dilation_r = 8,
 from scipy.signal import find_peaks
 def local_maxima_z(image, dist):
     """
-    This function create a mask of the image which select the local maxima along 
+    This function creates a mask of the image which select the local maxima along 
     the z direction which are separated by a minimum distance,
     
     Parameters
