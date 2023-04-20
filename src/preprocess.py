@@ -1,10 +1,10 @@
-##################################################
-## Preprocessing and segmentation of fly abdomens
-##################################################
-## Author: Stefano
-## Version: November 2021
-##################################################
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Function(s) to preprocess and segment 3d stacks of fly abdomens
 
+@author: ceolin
+"""
 import pandas as pd
 import os
 from skimage import io, transform
@@ -316,7 +316,7 @@ def clean_up_segmented_image(binary_image, image, closing_r = 4, dilation_r = 8,
     rp = regionprops(label_image)
     size = max([i.area for i in rp])
 
-    biggest_objects_mask = morphology.remove_small_objects(label_image, min_size=size/10)>0
+    biggest_objects_mask = morphology.remove_small_objects(label_image, min_size=size/100)>0
 
     # Create a max that selects the local maxima along the z direction:
     thresholded_image = local_maxima_z( biggest_objects_mask * image, mesh_radius)
@@ -330,8 +330,9 @@ def clean_up_segmented_image(binary_image, image, closing_r = 4, dilation_r = 8,
     # neighbours within a given radius:
         
     uni_down_pcd = pcd.uniform_down_sample(every_k_points=3)
-    cleaned_pcd, ind = uni_down_pcd.remove_radius_outlier(nb_points=4, radius=closing_r)
-    cleaned_pcd, ind =  cleaned_pcd.remove_radius_outlier(nb_points=4, radius=closing_r)
+    cleaned_pcd = uni_down_pcd
+    #cleaned_pcd, ind = uni_down_pcd.remove_radius_outlier(nb_points=4, radius=closing_r)
+    #cleaned_pcd, ind =  cleaned_pcd.remove_radius_outlier(nb_points=4, radius=closing_r)
     
     # Downsampling the point cloud to make the sampling more uniform:
     cleaned_pcd = cleaned_pcd.voxel_down_sample(voxel_size=5)

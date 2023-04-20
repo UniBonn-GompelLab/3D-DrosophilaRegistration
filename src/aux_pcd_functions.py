@@ -1,9 +1,10 @@
-##################################################
-## Function(s) to transform images in point clouds 
-## and viceversa
-##################################################
-## Author: Stefano
-##################################################
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Function(s) to transform 3d images in point clouds and viceversa.
+
+@author: ceolin
+"""
 
 import numpy as np
 import open3d as o3d

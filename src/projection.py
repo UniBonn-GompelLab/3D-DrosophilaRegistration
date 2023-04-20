@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Mon Nov 29 15:32:43 2021
+Function(s) to calculate a 2d projection of the surface of a registered 
+3d fluorescence image of a fly abdomen.
 
 @author: ceolin
 """
-
-##################################################
-## Author: Stefano
-## Version: September/October 2021
-##################################################
 
 import pandas as pd
 import os
@@ -20,6 +16,11 @@ from tifffile import imsave
 from tqdm import tqdm
 import glob
 import shutil
+from scipy.signal import find_peaks
+from scipy.ndimage import convolve1d
+from skimage.filters import gaussian
+from scipy.interpolate import make_interp_spline
+from scipy import ndimage
 
 if __name__ == '__main__':
     from aux_pcd_functions  import pcd_to_image, image_to_pcd
@@ -28,7 +29,7 @@ else:
 
 
 def projections_of_abdomens(
-    registered_data_df, registered_folder, destination_folder, landmark_folder, abdomen_mask_filename, n_bins_1 = 180, n_bins_2 = 200):
+    registered_data_df, registered_folder, destination_folder, landmark_folder, abdomen_mask_filename, crop_x = None, crop_y = None):
     '''
     Parameters
     ----------
@@ -57,7 +58,7 @@ def projections_of_abdomens(
     print("Projection of registered 3D stacks to 2D images in progress:")
 
     registered_data_df[["filename_gfp", "filename_dsred", "filename_tl"]] = registered_data_df.progress_apply(lambda row: \
-    project_and_save(row["image_file_name"], row["filename_gfp"], row["filename_dsred"], row["filename_tl"], registered_folder, destination_folder, abdomen_mask, n_bins_1, n_bins_2), axis=1)
+    project_and_save(row["image file name"], row["filename_gfp"], row["filename_dsred"], row["filename_tl"], registered_folder, destination_folder, abdomen_mask, crop_x, crop_y), axis=1)
     
     registered_data_df["folder"] = destination_folder
     registered_data_df.to_excel(os.path.join(destination_folder,'DatasetInformation.xlsx'))
@@ -69,8 +70,35 @@ def projections_of_abdomens(
     return
 
 
-def project_and_save(image_file_name, filename_gfp, filename_dsred, filename_tl, folder, destination_folder, abdomen_mask, n_bins_1 = 300, n_bins_2 = 400):
-    
+def project_and_save(image_file_name, filename_gfp, filename_dsred, filename_tl, folder, destination_folder, abdomen_mask, crop_x = None, crop_y = None):
+    """
+
+    Parameters
+    ----------
+    image_file_name : TYPE
+        DESCRIPTION.
+    filename_gfp : TYPE
+        DESCRIPTION.
+    filename_dsred : TYPE
+        DESCRIPTION.
+    filename_tl : TYPE
+        DESCRIPTION.
+    folder : TYPE
+        DESCRIPTION.
+    destination_folder : TYPE
+        DESCRIPTION.
+    abdomen_mask : TYPE
+        DESCRIPTION.
+    crop_x : TYPE, optional
+        DESCRIPTION. The default is None.
+    crop_y : TYPE, optional
+        DESCRIPTION. The default is None.
+
+    Returns
+    -------
+    None.
+
+    """
     try:
         Source_gfp   = io.imread( os.path.join(folder,filename_gfp) )
         Source_dsred = io.imread( os.path.join(folder,filename_dsred) )
@@ -82,24 +110,24 @@ def project_and_save(image_file_name, filename_gfp, filename_dsred, filename_tl,
     
     # Apply mask to select only the fly abdomen:
     Source_gfp = Source_gfp*abdomen_mask
-    Source_dsred  = Source_dsred*abdomen_mask
-    Source_tl  = Source_tl*abdomen_mask
+    Source_dsred = Source_dsred*abdomen_mask
+    Source_tl = Source_tl*abdomen_mask
+        
+    projected_image_gfp = fly_abdomen_spline_projection(Source_gfp, Source_gfp, abdomen_mask)
+    projected_image_dsred = fly_abdomen_spline_projection(Source_gfp, Source_dsred, abdomen_mask)
+    projected_image_tl = fly_abdomen_spline_projection(Source_gfp, Source_tl, abdomen_mask, maxima = False)
     
-    final_pcd, final_values = image_to_pcd(Source_gfp)
-    final_pcd_dsred, final_values_dsred = image_to_pcd(Source_dsred)
-    final_pcd_tl, final_values_tl = image_to_pcd(Source_tl)
-
-    bins_1 = np.linspace(-210, 210, n_bins_1)
-    bins_2 = np.linspace(0, 380, n_bins_2)
-    
-    projected_image = project_2D_cylindrical_xy(final_pcd, final_values, bins_1, bins_2, stat='max')
-    projected_image_dsred = project_2D_cylindrical_xy(final_pcd_dsred, final_values_dsred, bins_1, bins_2, stat='mean')  
-    projected_image_tl = project_2D_cylindrical_xy(final_pcd_tl, final_values_tl, bins_1, bins_2, stat='mean')  
-
-    #projected_images = project_2D_new(Source_gfp, Source_dsred, Source_tl)
-    #[projected_image, projected_image_dsred, projected_image_tl] = projected_images
-    
-    projected_image = projected_image.astype(np.uint16)
+    # cropping the projected images around the center:
+    if crop_x and crop_y:
+        center_y = projected_image_gfp.shape[0]/2
+        center_x = projected_image_gfp.shape[1]/2
+        start_y = int(center_y-crop_y/2)
+        start_x = int(center_x-crop_x/2)
+        projected_image_gfp = projected_image_gfp[start_y:(start_y+crop_y),start_x:(start_x+crop_x)]
+        projected_image_dsred = projected_image_dsred[start_y:(start_y+crop_y),start_x:(start_x+crop_x)]
+        projected_image_tl = projected_image_tl[start_y:(start_y+crop_y),start_x:(start_x+crop_x)]        
+        
+    projected_image_gfp = projected_image_gfp.astype(np.uint16)
     projected_image_dsred = projected_image_dsred.astype(np.uint16)
     projected_image_tl = projected_image_tl.astype(np.uint16)
     
@@ -109,7 +137,7 @@ def project_and_save(image_file_name, filename_gfp, filename_dsred, filename_tl,
     filename_TL = os.path.join(folder,'C3-'+image_file_name)
 
     image_file_names = [os.path.basename(filename_GFP), os.path.basename(filename_DsRed), os.path.basename(filename_TL)]
-    projected_images = [projected_image, projected_image_dsred, projected_image_tl]
+    projected_images = [projected_image_gfp, projected_image_dsred, projected_image_tl]
     new_file_names = aux_save_images(projected_images, image_file_names, "Projected_", destination_folder)
     
     return pd.Series([new_file_names[0], new_file_names[1], new_file_names[2]])
@@ -151,66 +179,271 @@ def aux_save_images(images, names, prefix, folder):
     return list(file_names_list)
 
 
-def project_2D_cylindrical_xy(pcd, values, bins_theta, bins_z,  x0=200, y0=337, cos_theta=-0.9, sin_theta=0.43, stat='max'):
+def moving_average(x, n = 3):
     """
-    Function that computes the 2D projection of the pre aligned point cloud 
-    object describing the abdomen surface. 
-    The 2D projection is computed in cylindrical coordinates with the cylinder 
-    axis laying on the xy plane.
+    Apply a moving average operation of size n on the array x. 
+    The size of the sliding window is reduced at the boundaries of x down to 1.
+    The final array has the same shape of x.
     
     Parameters
     ----------
-    pcd : point cloud
-    values : brightness values of pcd
-    bins_theta : numpy array
-        limits of bins for angle.
-    bins_z : numpy array
-        limits of bins along cylinder axis.
-    x0 : float, optional
-        x origin. The default is 200.
-    y0 : float, optional
-        y origin. The default is 337.
-    cos_theta : float
-        x coordinate of orientation of cylinder axis.
-    sin_theta : float
-        y coordinate of orientation of cylinder axis.
-    stat : string, optional
-        statistic to use when binning values from the pcd. The default is 'max'.
-
+    x : numpy array
+    n : integer
+        
     Returns
     -------
-    final_image : numpy array
-        projected 2d image.
+    averaged: numpy array
+        averaged numpy array
+
+    """
+    convolved = convolve1d(x, np.ones(n), mode='constant')
+    normalization = convolve1d(np.ones(len(x)), np.ones(n), mode = 'constant')
+    averaged = convolved/normalization
+    return averaged
+
+def fit_spline_onto_convex_profile(image, mask, y_min_cutoff = 20, smoothing_n = 7):
+    """
+    This function takes an image containing a bright convex curve inside a region 
+    limited by the mask image. The function calculates a spline interpolation that follows the
+    bright profile in the image and returns two arrays containing the x and y coordinates of 
+    a set of uniformly distanced points along the spline.
+    
+    Parameters
+    ----------
+    image : 2-dim numpy array
+    mask  : 2-dim numpy array
+    y_min_cutoff: int, optional
+        cutoff position of the curve in the image in the y direction.
+        The default is 20.
+    smoothing_n: int, optional
+        Size of the moving average window applied to the curve.
+        The default is 7.
+        
+    Returns
+    -------
+    x_new, y_new: numpy arrays
+        x and y coordinates of a set of uniformly distributed points along the spline curve.
 
     """
     
-    indexes = np.asarray(pcd.points).T
+    mask_dist    = ndimage.distance_transform_cdt(mask)
+    image_dist   = ndimage.distance_transform_cdt(image > 0)
+    smooth_image = gaussian(image, 1, preserve_range=False)
     
-    x = indexes[2,:]-x0
-    y = indexes[1,:]-y0
-    z = indexes[0,:]
+    # find starting points of the curve:
+    peaks = []
+    y_min = 0
+    while (len(peaks) < 2) & (y_min < image.shape[0]):
+        
+        # calculate an estimate of the distance between the extreme points of the 
+        # convex curve based on the mask:
+        
+        peaks_ref, _ = find_peaks(mask_dist[y_min,:], distance = 10)
+        
+        if len(peaks_ref)>1:
+            distance = (peaks_ref[-1]-peaks_ref[0])/2
+        else:
+            distance = 10
+        
+        #look for the position of the curve extreme points in the image:
+        peaks, _ = find_peaks(image_dist[y_min,:], distance = distance)
+        y_min    = y_min+1
     
-    parallel = cos_theta*y-sin_theta*x
-    perp = sin_theta*y-cos_theta*x
+    if len(peaks) > 1:
+        start_x1 = peaks[0]
+        start_x2 = peaks[-1]
     
-    theta = np.arctan2(perp, z)
+    else:
+        return None
     
-    # angle projection:
-    ret = stats.binned_statistic_2d(theta, parallel, values, statistic=stat, bins=[bins_theta, bins_z], range=None, expand_binnumbers=False)
+    # use the maxima along y for each position x, as starting points
+    # for the spline fitting:
+    x_o = np.linspace(start_x1, start_x2, np.abs(start_x1-start_x2), dtype = int)
+    y_o = np.argmax(smooth_image[:,x_o], axis = 0)
+
+    # reposition first and last point independently from where the brightness peaks are
+    y_o[0]  = y_min
+    y_o[-1] = y_min
+
+    # add an extra point on both ends:
+    if y_min_cutoff < y_min:
+        
+        y_o = np.insert(y_o, 0, y_min_cutoff)
+        y_o = np.append(y_o, y_min_cutoff)
+
+        x_o = np.insert(x_o, 0, x_o[0])
+        x_o = np.append(x_o, x_o[-1])
+
+    x_i = moving_average(x_o, n = smoothing_n)
+    y_i = moving_average(y_o, n = smoothing_n)
+
+    y_i[0]  = y_min_cutoff
+    y_i[-1] = y_min_cutoff
+
+
+    # resample the points to make the sampling more uniform and
+    # create the array containing the distance of each point
+    # from the first one along the curve.
+
+    distances = [0]
+    x = [x_i[0]]
+    y = [y_i[0]]
+    previous = 0
+    dist_from_previous = 0
+    minimum_dist = 6
+
+    for i in range(1, len(x_i)):
+        dist_from_previous += ((x_i[i]-x_i[i-1])**2 + (y_i[i]-y_i[i-1])**2)**0.5
+        if dist_from_previous > minimum_dist:
+            distances.append(distances[-1]+dist_from_previous)
+            x.append(x_i[i])
+            y.append(y_i[i])
+            dist_from_previous = 0
+            
+    distances = np.array(distances)
+    spline = make_interp_spline(distances, np.c_[x, y], k=2)
+    x_new, y_new = spline(np.arange(0,int(max(distances)),1)).T
     
-    # z-projection:
-    #ret = stats.binned_statistic_2d(y1, x1, values, statistic=stat, bins=[bins_x1, bins_x2], range=None, expand_binnumbers=False)
+    return x_new, y_new
+
+def brightness_along_curve_average(image, x, y, radius = 1):
+    """
+    This function returns the average brightness of an image in areas centered at a set of points.
+    It can be used to obtain a brightness profile along an arbitrary curve.
     
-    final_image = ret.statistic
+    Parameters
+    ----------
+    image : 2-dim numpy array
+    x : 1-dim numpy array
+    y : 1-dim numpy array
+    radius : integer, optional
+        Distance around each point used for averaging the image brightness.
+        The defaults is 1.
+        
+    Returns
+    -------
+    profile: numpy array
+        average brightness around the given points.
+    """
+    profile = []
+
+    for i in range(len(x)):
+        r = int(y[i])
+        c = int(x[i])
+        profile.append(np.mean(image[(r-radius):(r+radius),(c-radius):(c+radius)]))
     
-    return final_image
+    return np.array(profile)
+
+
+def brightness_along_curve_perp_max_min(image, x, y, radius = 1, maxima = True):
+    """
+    This function returns the maximum or minimum brightness of an image along an arbitrary curve
+    defined by two arrays of x and y coordinates. The brightness value at each position x, y
+    is calculated as the maximum along the local perpendicular direction to the curve, within a maximum 
+    distance from the curve defined by the radius parameter.
+    
+    Parameters
+    ----------
+    image : 2-dim numpy array
+    x : 1-dim numpy array
+    y : 1-dim numpy array
+    radius : integer, optional
+        Maximum distance from each point to be considered when calculating the maximum brightness.
+        The defaults is 1.
+        
+    Returns
+    -------
+    profile: numpy array
+        maximum projected brightness along the curve.
+    """
+
+    profile = []
+    
+    diff_x_fw = x[1:]-x[:-1]
+    diff_y_fw = y[1:]-y[:-1]
+    
+    diff_x = np.concatenate([[0], diff_x_fw])+np.concatenate([diff_x_fw,[0]])
+    diff_y = np.concatenate([[0], diff_y_fw])+np.concatenate([diff_y_fw,[0]])
+    
+    diff_x[1:-1] = diff_x[1:-1]/2 
+    diff_y[1:-1] = diff_y[1:-1]/2 
+    
+    for i in range(len(x)):
+        
+        norm = (diff_x[i]**2+diff_y[i]**2)**0.5
+        perp_dx = -diff_y[i]/norm
+        perp_dy = diff_x[i]/norm
+        
+        cols = []
+        rows = []
+        for j in range(-radius, radius+1):
+            cols.append( round(x[i]+perp_dx*j) )
+            rows.append( round(y[i]+perp_dy*j) )
+        if maxima:
+            profile.append(np.max(image[rows, cols]))
+        else:
+            profile.append(np.min(image[rows, cols]))
+            
+    return profile 
+
+
+def fly_abdomen_spline_projection(image_stack_ref, image_stack_signal, image_stack_mask, min_y = 0, center = 180, maxima = True):
+    """
+    This function performs the 2d projection of a 3d image stack of a fly abdomen 
+    with two fluorescent channels. The first channel is the reference channel and
+    is used to define the abdomen surface. The second channel is the signal of interest.
+    To calculate the 2d projection the abdomen is analyzed in slices along its axis.
+    For each slice the profile of the abdomen is interpolated with a spline curve 
+    and the image brightness is read out along the curve, taking the local maxima along
+    the perpendicular. The 1 d brightness profile obtained from each image slice forms
+    one row of the 2d projected image.
+    
+    Parameters
+    ----------
+    image_stack_ref : 2-dim numpy array
+    image_stack_signal : 2-dim numpy array
+    image_stack_mask : 2-dim numpy array
+    min_y : integer, optional
+        Minimium distance of the abdomen from the beginning of the image stack
+        The defaults is 0.
+    center_x : integer, optional
+        center of the abomen in the x direction. used to align the profiles obtained from different slices.
+        The defaults is 180.
+        
+    Returns
+    -------
+    projected: 2-dim numpy array
+        The 2d projected image.
+    """  
+    stack_shape = image_stack_ref.shape
+    projected = np.zeros([stack_shape[2], stack_shape[1]+2*stack_shape[0]])
+    
+    for layer in range(stack_shape[2]):
+        image_slice  = image_stack_ref[:,:,layer]
+        mask_slice   = image_stack_mask[:,:,layer]
+        profile = fit_spline_onto_convex_profile(image_slice, mask_slice, min_y, smoothing_n = 10)
+
+        if profile is not None:
+            profile_x, profile_y = profile
+        else:
+            continue
+        
+        projected_section = brightness_along_curve_perp_max_min(image_stack_signal[:,:, layer], profile_x, profile_y, radius = 5, maxima = maxima)
+
+        # find center:
+        profile_center = np.argmin(np.absolute(profile_x-center))
+        projection_min = round(projected.shape[1]/2)-profile_center
+        projection_max = projection_min+len(projected_section)
+        projected[-layer, projection_min:projection_max] = projected_section
+        
+    return projected
 
 if __name__ == '__main__':
     
     read_folder = "../../data_2/03_registered"
     destination_folder = "../../data_2/04_projected"
     landmark_folder = "../../data_2/05_landmarks/data"
-    abdomen_mask_file = "../../data_2/References_and_masks/Reference_abdomen_mask_iso.tif"
+    abdomen_mask_file = "../../data_2/References_and_masks/Reference_abdomen_mask_iso_thick.tif"
 
 
     df_name = "DatasetInformation.xlsx"

@@ -4,7 +4,6 @@
 Function(s) to register 3d stacks of fly abdomens
 
 @author: ceolin
-@last_update: February 2023
 """
 
 import pandas as pd
@@ -93,9 +92,9 @@ def registration_of_abdomens_3D(
 
 def register_and_save(image_file_name, filename_gfp, filename_dsred, filename_tl, folder, reference_fly, destination_folder, DatasetInfoRegistered):
     """
-    This function manually registers the three channels of one 3d image stack,  
-    save the registered images in the destination folder and updates the 
-    the dataframe with the image information.
+    This function is used to manually register the three channels of one 
+    3d image stack, save the registered images in the destination folder 
+    and update the dataframe with the image information.
 
     Parameters
     ----------
@@ -146,7 +145,7 @@ def register_and_save(image_file_name, filename_gfp, filename_dsred, filename_tl
     source_tl.transform(transformation)
     
     # Draw the results:
-    draw_registration_result(source_gfp, target, np.identity(4))
+    draw_registration_result(source_gfp, target)
     
     # Convert the registered point clouds to image stacks:
     registered_source_image = pcd_to_image(source_gfp, source_values_gfp, reference_fly.shape)
@@ -201,16 +200,14 @@ def aux_save_images(images, names, prefix, folder):
     
     return list(file_names_list)
 
-def draw_registration_result(source, target, transformation):
+def draw_registration_result(source, target):
     """
-    Draw two point clouds in different colors
+    Draw two point clouds in blue and yellow
     
     Parameters
     ----------
     source : point cloud
     target : point cloud
-    transformation : numpy 4x4 array
-        transformation matrix applied to the source point cloud.
 
     Returns
     -------
@@ -221,7 +218,6 @@ def draw_registration_result(source, target, transformation):
     target_temp = copy.deepcopy(target)
     source_temp.paint_uniform_color([1, 0.706, 0])
     target_temp.paint_uniform_color([0, 0.651, 0.929])
-    source_temp.transform(transformation)
     o3d.visualization.draw_geometries([source_temp, target_temp])
     
     return
