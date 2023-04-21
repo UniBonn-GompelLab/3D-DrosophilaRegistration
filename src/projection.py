@@ -29,7 +29,7 @@ else:
 
 
 def projections_of_abdomens(
-    registered_data_df, registered_folder, destination_folder, landmark_folder, abdomen_mask_filename, crop_x = None, crop_y = None):
+    registered_data_df, registered_folder, destination_folder, landmark_folder, abdomen_mask_filename, abdomen_shape_reference_file , crop_x = None, crop_y = None):
     '''
     Parameters
     ----------
@@ -54,11 +54,13 @@ def projections_of_abdomens(
         os.remove(os.path.join(destination_folder, f))
     
     abdomen_mask = io.imread(abdomen_mask_filename)/255
+    abdomen_shape_ref = io.imread(abdomen_shape_reference_file)/255
+    
         
     print("Projection of registered 3D stacks to 2D images in progress:")
 
     registered_data_df[["filename_gfp", "filename_dsred", "filename_tl"]] = registered_data_df.progress_apply(lambda row: \
-    project_and_save(row["image file name"], row["filename_gfp"], row["filename_dsred"], row["filename_tl"], registered_folder, destination_folder, abdomen_mask, crop_x, crop_y), axis=1)
+    project_and_save(row["image file name"], row["filename_gfp"], row["filename_dsred"], row["filename_tl"], registered_folder, destination_folder, abdomen_mask, abdomen_shape_ref , crop_x, crop_y), axis=1)
     
     registered_data_df["folder"] = destination_folder
     registered_data_df.to_excel(os.path.join(destination_folder,'DatasetInformation.xlsx'))
@@ -70,7 +72,7 @@ def projections_of_abdomens(
     return
 
 
-def project_and_save(image_file_name, filename_gfp, filename_dsred, filename_tl, folder, destination_folder, abdomen_mask, crop_x = None, crop_y = None):
+def project_and_save(image_file_name, filename_gfp, filename_dsred, filename_tl, folder, destination_folder, abdomen_mask, abdomen_shape_ref,  crop_x = None, crop_y = None):
     """
 
     Parameters
@@ -89,6 +91,8 @@ def project_and_save(image_file_name, filename_gfp, filename_dsred, filename_tl,
         DESCRIPTION.
     abdomen_mask : TYPE
         DESCRIPTION.
+    abdomen_shape_ref : TYPE
+            DESCRIPTION.
     crop_x : TYPE, optional
         DESCRIPTION. The default is None.
     crop_y : TYPE, optional
@@ -113,9 +117,9 @@ def project_and_save(image_file_name, filename_gfp, filename_dsred, filename_tl,
     Source_dsred = Source_dsred*abdomen_mask
     Source_tl = Source_tl*abdomen_mask
         
-    projected_image_gfp = fly_abdomen_spline_projection(Source_gfp, Source_gfp, abdomen_mask)
-    projected_image_dsred = fly_abdomen_spline_projection(Source_gfp, Source_dsred, abdomen_mask)
-    projected_image_tl = fly_abdomen_spline_projection(Source_gfp, Source_tl, abdomen_mask, maxima = False)
+    projected_image_gfp = fly_abdomen_spline_projection(Source_dsred, Source_gfp, abdomen_shape_ref)
+    projected_image_dsred = fly_abdomen_spline_projection(Source_dsred, Source_dsred, abdomen_shape_ref)
+    projected_image_tl = fly_abdomen_spline_projection(Source_dsred, Source_tl, abdomen_shape_ref, maxima = False)
     
     # cropping the projected images around the center:
     if crop_x and crop_y:
@@ -201,17 +205,17 @@ def moving_average(x, n = 3):
     averaged = convolved/normalization
     return averaged
 
-def fit_spline_onto_convex_profile(image, mask, y_min_cutoff = 20, smoothing_n = 7):
+def fit_spline_onto_convex_profile(image, ref_mask, y_min_cutoff = 20, smoothing_n = 7):
     """
-    This function takes an image containing a bright convex curve inside a region 
-    limited by the mask image. The function calculates a spline interpolation that follows the
+    This function takes an image containing a bright convex curve and a binary mask representing
+    prior information about the curve. The function calculates a spline interpolation that follows the
     bright profile in the image and returns two arrays containing the x and y coordinates of 
     a set of uniformly distanced points along the spline.
     
     Parameters
     ----------
     image : 2-dim numpy array
-    mask  : 2-dim numpy array
+    ref_mask  : 2-dim numpy array
     y_min_cutoff: int, optional
         cutoff position of the curve in the image in the y direction.
         The default is 20.
@@ -226,27 +230,16 @@ def fit_spline_onto_convex_profile(image, mask, y_min_cutoff = 20, smoothing_n =
 
     """
     
-    mask_dist    = ndimage.distance_transform_cdt(mask)
+    ref_dist    = ndimage.distance_transform_cdt(ref_mask)
     image_dist   = ndimage.distance_transform_cdt(image > 0)
-    smooth_image = gaussian(image, 1, preserve_range=False)
+    smooth_image = gaussian(image, 2, preserve_range=False)
     
-    # find starting points of the curve:
+    # find starting points of the curve using the reference mask:
     peaks = []
     y_min = 0
     while (len(peaks) < 2) & (y_min < image.shape[0]):
         
-        # calculate an estimate of the distance between the extreme points of the 
-        # convex curve based on the mask:
-        
-        peaks_ref, _ = find_peaks(mask_dist[y_min,:], distance = 10)
-        
-        if len(peaks_ref)>1:
-            distance = (peaks_ref[-1]-peaks_ref[0])/2
-        else:
-            distance = 10
-        
-        #look for the position of the curve extreme points in the image:
-        peaks, _ = find_peaks(image_dist[y_min,:], distance = distance)
+        peaks, _ = find_peaks(ref_dist[y_min,:], distance = 10)
         y_min    = y_min+1
     
     if len(peaks) > 1:
@@ -260,6 +253,7 @@ def fit_spline_onto_convex_profile(image, mask, y_min_cutoff = 20, smoothing_n =
     # for the spline fitting:
     x_o = np.linspace(start_x1, start_x2, np.abs(start_x1-start_x2), dtype = int)
     y_o = np.argmax(smooth_image[:,x_o], axis = 0)
+    y_o[y_o < y_min] = y_min
 
     # reposition first and last point independently from where the brightness peaks are
     y_o[0]  = y_min
@@ -395,7 +389,7 @@ def fly_abdomen_spline_projection(image_stack_ref, image_stack_signal, image_sta
     To calculate the 2d projection the abdomen is analyzed in slices along its axis.
     For each slice the profile of the abdomen is interpolated with a spline curve 
     and the image brightness is read out along the curve, taking the local maxima along
-    the perpendicular. The 1 d brightness profile obtained from each image slice forms
+    the perpendicular. The 1d brightness profile obtained from each image slice forms
     one row of the 2d projected image.
     
     Parameters
@@ -407,7 +401,7 @@ def fly_abdomen_spline_projection(image_stack_ref, image_stack_signal, image_sta
         Minimium distance of the abdomen from the beginning of the image stack
         The defaults is 0.
     center_x : integer, optional
-        center of the abomen in the x direction. used to align the profiles obtained from different slices.
+        center of the abomen in the x direction. Used to align the profiles obtained from different slices.
         The defaults is 180.
         
     Returns
@@ -416,7 +410,7 @@ def fly_abdomen_spline_projection(image_stack_ref, image_stack_signal, image_sta
         The 2d projected image.
     """  
     stack_shape = image_stack_ref.shape
-    projected = np.zeros([stack_shape[2], stack_shape[1]+2*stack_shape[0]])
+    projected = np.zeros([stack_shape[2], stack_shape[1]+4*stack_shape[0]])
     
     for layer in range(stack_shape[2]):
         image_slice  = image_stack_ref[:,:,layer]
@@ -444,9 +438,11 @@ if __name__ == '__main__':
     destination_folder = "../../data_2/04_projected"
     landmark_folder = "../../data_2/05_landmarks/data"
     abdomen_mask_file = "../../data_2/References_and_masks/Reference_abdomen_mask_iso_thick.tif"
+    abdomen_shape_reference_file = "../../data_2/References_and_masks/Reference_abdomen_mask_iso.tif"
+
 
 
     df_name = "DatasetInformation.xlsx"
     df = pd.read_excel(os.path.join(read_folder,df_name))
-    projections_of_abdomens(df, read_folder, destination_folder, landmark_folder, abdomen_mask_file)
+    projections_of_abdomens(df, read_folder, destination_folder, landmark_folder, abdomen_mask_file, abdomen_shape_reference_file )
 
