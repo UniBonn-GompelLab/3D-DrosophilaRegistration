@@ -5,14 +5,15 @@ import glob
 import re
 import PySimpleGUI as sg
 from PIL import Image
+import PIL
 import pandas as pd
 import numpy as np
 import ast
 from datetime import datetime
-import cv2
 from ..registration.TPS import TPSwarping
 from skimage.filters import gaussian
 from skimage.segmentation import active_contour
+from skimage.transform import resize
 
 file_types_dfs = [("CSV (*.csv)", "*.csv"),("All files (*.*)", "*.*")]
 
@@ -335,13 +336,11 @@ def update_progress_bar(df_files, window):
     return   
 
 def rebin(img, binning):
-    img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-    width = int(img.shape[1] / binning)
-    height = int(img.shape[0] / binning)
+    width = int(img.shape[0] / binning)
+    height = int(img.shape[1] / binning)
     dim = (width, height)
-    resized = cv2.resize(img, dim, interpolation = cv2.INTER_AREA)
+    resized = resize(img, dim,  preserve_range=True, anti_aliasing=True)
     return resized
-
 
 def create_new_project():
     """
@@ -620,7 +619,8 @@ def create_registration_window(shared, df_landmarks, df_model, df_files):
                 
                 # Open the source image:
                 file_path = df_files.loc[df_files["file name"] == file_name, "full path"].values[0]
-                img = cv2.imread(file_path,  cv2.IMREAD_ANYDEPTH)
+                img = PIL.Image.open(file_path)
+                img = np.asarray(img)
                 shape_src = np.asarray(img.shape)
                 
                 # Get image landmarks
@@ -652,11 +652,13 @@ def create_registration_window(shared, df_landmarks, df_model, df_files):
                 # Resize the image according to the slider value
                 size = warped.shape*np.array([values['-REGISTRATION-RESOLUTION-']/100,values['-REGISTRATION-RESOLUTION-']/100])
                 size = [int(x) for x in size]
-                warped = cv2.resize(warped,(size[1],size[0]))
+                warped = resize(warped, size, preserve_range=True, anti_aliasing=True).astype('uint16')
+                
                 
                 # Save the registered image
                 destination_path = os.path.join(values['-REGISTERED-IMAGES-FOLDER-'], file_name)
-                cv2.imwrite(destination_path, warped)
+                warped_PIL = PIL.Image.fromarray(warped)
+                warped_PIL.save(destination_path)
                 
                 image_quality = df_files.loc[df_files["file name"] == file_name, "image quality"].values[0]
                 notes = df_files.loc[df_files["file name"] == file_name, "notes"].values[0]
@@ -674,11 +676,15 @@ def create_registration_window(shared, df_landmarks, df_model, df_files):
                     for ch in channels:
                          ch_file_path = temp_df.loc[temp_df['extra channel name']==ch,"full path"].values[0]
                          ch_file_name = os.path.basename(ch_file_path)
-                         ch_img = cv2.imread(ch_file_path,  cv2.IMREAD_ANYDEPTH)
+                         
+                         ch_img = PIL.Image.open(ch_file_path)
+                         ch_img = np.asarray(ch_img)
                          ch_warped = TPSwarping(ch_img, c_src, c_dst, warped_shape)
-                         ch_warped = cv2.resize(ch_warped,(size[1],size[0]))
+                         ch_warped = resize(ch_warped, size, preserve_range=True, anti_aliasing=True).astype('uint16')
                          ch_destination_path = os.path.join(values['-REGISTERED-IMAGES-FOLDER-'], ch_file_name)
-                         cv2.imwrite(ch_destination_path, ch_warped)
+                         ch_warped_PIL = PIL.Image.fromarray(ch_warped)
+                         ch_warped_PIL.save(ch_destination_path)
+ 
                          df_info_row_data = [[ch_file_name, ch, image_quality, notes]]
                          df_info_row = pd.DataFrame(df_info_row_data, columns=df_info_row_columns)
                          df_info = pd.concat([df_info_row, df_info])
