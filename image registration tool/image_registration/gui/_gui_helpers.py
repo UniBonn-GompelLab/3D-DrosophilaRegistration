@@ -343,48 +343,6 @@ def rebin(img, binning):
     return resized
 
 
-def enhance_edges(img, binning, smoothing):
-    img = rebin(img, binning)
-    # filtered_image = difference_of_gaussians(img, 2, 10)
-    # could use the following to avoid relying on scikit-image 0.19
-    filtered_image = gaussian(img, 10) - gaussian(img, 2)
-    filtered_image = (-filtered_image)*(filtered_image<0).astype(np.uint8)
-    filtered_image = 1 -filtered_image
-    edges = (filtered_image-np.min(filtered_image))/(np.max(filtered_image)-np.min(filtered_image))
-    edges = gaussian(edges, smoothing, preserve_range=False)
-    return edges
-
-#Issue with point spacing : if point spacing > lenght between the two points -> error
-def snake_contour(img, p1_x, p1_y, p2_x, p2_y, N = None, points_spacing = 30, binning=5, smoothing=2, alpha=0.1):
-    distance = np.sqrt((p1_x-p2_x)**2+(p1_y-p2_y)**2)
-    n_points = N or int(distance/points_spacing)
-
-    r = np.linspace(p1_y, p2_y, n_points)/binning
-    c = np.linspace(p1_x, p2_x, n_points)/binning
-        
-    init = np.array([r, c]).T
-    img = enhance_edges(img, binning, smoothing)
-    snake = active_contour(img,
-                   init, boundary_condition='fixed', coordinates='rc', 
-                   alpha=alpha, beta=0.1, w_line=-5, w_edge=0, gamma= 0.1)
-    return snake*binning
-    
-
-def snake(img, df_model, df_lines):
-   
-    LM = []
-    N=[]
-    for i in range(len(df_lines["Lmk1"])):
-        lm1 = ast.literal_eval(df_model.loc[df_model["name"]==df_lines["Lmk1"][i], "target"].values[0])
-        lm2 = ast.literal_eval(df_model.loc[df_model["name"]==df_lines["Lmk2"][i], "target"].values[0])
-        alpha = (df_lines.loc[df_lines["Lmk1"][i]==df_model["name"], "alpha"])
-        alpha = alpha.iloc[0]
-        snk = snake_contour(img,lm1[0],lm1[1],lm2[0],lm2[1],alpha=alpha)
-        LM.extend(snk)
-        N.append(len(snk))
-    return LM,N
-
-
 def create_new_project():
     """
     Function used to create a new project.
@@ -588,9 +546,6 @@ def create_registration_window(shared, df_landmarks, df_model, df_files):
               [sg.Text('Target folder for registered images: ', size=(30, 1)), 
                sg.Input(size=(30,1), enable_events=True, key='-REGISTERED-IMAGES-FOLDER-'),
                sg.FolderBrowse()],
-              [sg.Text('Snake model file: ', size=(30, 1)), 
-               sg.Input(size=(30,1), enable_events=True, key='-SNAKE-MODEL-'),
-               sg.FileBrowse()],
               [sg.Text('Image resolution of registered images (%):',size=(38,1)),
               sg.Slider(orientation ='horizontal', key='-REGISTRATION-RESOLUTION-', range=(1,100),default_value=100)],
               [sg.Checkbox('Apply the registration to additional channels?', key="-MULTI-CHANNEL-", default=False, enable_events=True)],
@@ -623,9 +578,7 @@ def create_registration_window(shared, df_landmarks, df_model, df_files):
             registration_window.Element('-EXTRA-CHANNELS-FOLDERS-').Update(visible=False)
             registration_window.Element('-TEXT-CH2-').Update(visible=False)
             registration_window.Element('-REFERENCE-CHANNEL-').Update(visible=False)
-      
-        if event == '-SNAKE-MODEL-':
-            df_snake = pd.read_csv(values['-SNAKE-MODEL-'])              
+                
 
         if event == '-REGISTRATION-SAVE-':
             # Index for loading bar:
@@ -638,22 +591,6 @@ def create_registration_window(shared, df_landmarks, df_model, df_files):
             for landmark in shared['list_landmarks']:
                 [x,y] = ast.literal_eval(df_model.loc[df_model["name"]==landmark, "target"].values[0])
                 c_dst.append([x,y])
-
-            # Getting snake landmarks for reference
-            if df_snake is not None:
-                df_snake["N_points"] = 0
-                for index, row in df_snake.iterrows():
-                    # get the positions of the two landmarks in target image:
-                    lmk1_name, lmk2_name  = row["Lmk1"], row["Lmk2"]
-                    lmk1_pos = ast.literal_eval(df_model.loc[df_model["name"]==lmk1_name, "target"].values[0])
-                    lmk2_pos = ast.literal_eval(df_model.loc[df_model["name"]==lmk2_name, "target"].values[0])
-                    alpha = row["alpha"]
-                    smoothing = row["smoothing"]
-                    w_line = row["w_line"]
-                    ref_image = cv2.imread(os.path.join(shared['proj_folder'], ref_image_name),  cv2.IMREAD_ANYDEPTH)
-                    snk = snake_contour(ref_image, lmk1_pos[1], lmk1_pos[0], lmk2_pos[1], lmk2_pos[0], alpha, smoothing, w_line)
-                    df_snake.loc[index,"N_points"] = len(snk)            
-                    c_dst.extend(snk[1:-1].tolist())
     
             c_dst = np.reshape(c_dst,(len(c_dst),2))
             shape_dst = np.asarray(shared['ref_image'].size)
@@ -700,23 +637,6 @@ def create_registration_window(shared, df_landmarks, df_model, df_files):
                 if len(c_src) != len(landmarks_list):
                     loading_bar_i+=1
                     continue 
-                
-                # Get snake image landmarks
-                if df_snake is not None:
-                    # binning:
-                    binning = np.max([1, np.round( max(shape_src)/max(shape_dst) )])
-                    for index, row in df_snake.iterrows():
-                        # get the positions of the two landmarks in target image:
-                        lmk1_name = row["Lmk1"]
-                        lmk2_name = row["Lmk2"]
-                        lmk1_pos = ast.literal_eval(df_landmarks.loc[df_landmarks["file name"]==file_name, lmk1_name ].values[0])
-                        lmk2_pos = ast.literal_eval(df_landmarks.loc[df_landmarks["file name"]==file_name, lmk2_name ].values[0])
-                        alpha = row["alpha"]
-                        smoothing = row["smoothing"]
-                        w_line = row["w_line"]
-                        N = row["N_points"]
-                        snk = snake_contour(img, lmk1_pos[1], lmk1_pos[0], lmk2_pos[1], lmk2_pos[0], alpha, smoothing, w_line, N=N, binning=binning)
-                        c_src.extend(snk[1:-1].tolist())
 
                 np.reshape(c_src,(len(c_src),2))
                 
@@ -1083,7 +1003,7 @@ def make_main_window(size, graph_canvas_width):
     return sg.Window("Image Annotation Tool", layout, size=size, finalize=True, return_keyboard_events=True)
 
 
-def make_landmarks_window(model_df, landmarks_df, current_filename, location = (1200,100), size = (300,1200)):
+def make_landmarks_window(model_df, landmarks_df, current_filename, location = (1200,100), size = (300,900)):
     """
     Function used to create the extra window with buttons used to select the 
     various landmarks. The window is created only when a project is open and is 
@@ -1120,12 +1040,17 @@ def make_landmarks_window(model_df, landmarks_df, current_filename, location = (
             landmarks_buttons_colors.append("FloralWhite") 
         else:
             landmarks_buttons_colors.append("SteelBlue3")     
-        
-    layout = [[sg.Text('Select landmark: ', size=(20, 1))],
-              *[[sg.Button(LM, size=(20,1), key = LM, button_color = ("black", landmarks_buttons_colors[i])),] for i, LM in enumerate(landmarks_list)],
-              [sg.Button("Show all landmarks", size = (20,1), key = "-SHOW-ALL-")],
-              [sg.Button("Delete current Landmark", size = (20,1), key = "-DELETE_LDMK-", button_color = ("black", "orange"))],
-             ]
+    
+    scrollable_column = [
+        [sg.Text('Select landmark: ', size=(20, 1))],
+         *[[sg.Button(LM, size=(20,1), key = LM, button_color = ("black", landmarks_buttons_colors[i])),] for i, LM in enumerate(landmarks_list)],
+        [sg.Button("Show all landmarks", size = (20,1), key = "-SHOW-ALL-")],
+        [sg.Button("Delete current Landmark", size = (20,1), key = "-DELETE_LDMK-", button_color = ("black", "orange"))],
+        ]     
+    
+    layout = [
+        [sg.Column(scrollable_column, scrollable=True,  vertical_scroll_only=True, expand_x = True, expand_y = True)],
+        ]
     
     return sg.Window("Landmark selection", layout, size=size, finalize=True, location = location)
 

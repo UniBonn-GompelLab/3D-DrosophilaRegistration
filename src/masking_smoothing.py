@@ -16,7 +16,7 @@ from tqdm import tqdm
 
 def preprocess_registered_images(
     read_folder, destination_folder, database_registered, database_info, \
-    mask_filename, smoothing_sigma, bcg_construct = None, binning=None):
+    mask_filename, smooth_x, smooth_y, bcg_construct = None, binning=None):
     '''
     Parameters
     ----------
@@ -66,7 +66,7 @@ def preprocess_registered_images(
         bcg = None
         
     # Initialize variables for smoothing:
-    fft_gauss_kernel = fft_gaussian_smoothing_kernel(mask, smoothing_sigma)
+    fft_gauss_kernel = fft_gaussian_smoothing_kernel(mask, smooth_x, smooth_y)
     normalization_mask = (1/(aux_convolution(mask,fft_gauss_kernel)*mask+(mask==0)))*mask
 
     # run row by row, apply the mask, remove the background and save the results
@@ -135,13 +135,13 @@ def preprocess_and_save(image_file_name, mask, fft_gauss_kernel, normalization_m
 
     return new_file_name
 
-def fft_gaussian_smoothing_kernel(mask, smoothing_sigma):
+def fft_gaussian_smoothing_kernel(mask, smoothing_sigma_h, smoothing_sigma_v):
     # Definition of the Gaussian kernel for blurring the background
-    kernlen = mask.shape[0]
-    gkern1d_h = signal.gaussian(kernlen, std=smoothing_sigma).reshape(kernlen, 1)
     kernlen = mask.shape[1]
-    gkern1d_v = signal.gaussian(kernlen, std=smoothing_sigma).reshape(kernlen, 1)
-    gkern2d = np.outer(gkern1d_h, gkern1d_v)
+    gkern1d_h = signal.gaussian(kernlen, std=smoothing_sigma_h).reshape(kernlen, 1)
+    kernlen = mask.shape[0]
+    gkern1d_v = signal.gaussian(kernlen, std=smoothing_sigma_v).reshape(kernlen, 1)
+    gkern2d = np.outer(gkern1d_v, gkern1d_h)
     gkern2d = gkern2d/sum(map(sum, gkern2d))
     fft_kernel = fft2(ifftshift(gkern2d))   
     return fft_kernel

@@ -422,7 +422,7 @@ def fly_abdomen_spline_projection(image_stack_ref, image_stack_signal, image_sta
         else:
             continue
         
-        projected_section = brightness_along_curve_perp_max_min(image_stack_signal[:,:, layer], profile_x, profile_y, radius = 5, maxima = maxima)
+        projected_section = brightness_along_curve_perp_max_min(image_stack_signal[:,:, layer], profile_x, profile_y, radius = 8, maxima = maxima)
 
         # find center:
         profile_center = np.argmin(np.absolute(profile_x-center))
