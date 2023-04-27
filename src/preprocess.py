@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Function(s) to preprocess and segment 3d stacks of fly abdomens
+Functions to preprocess and segment 3d stacks of fly abdomens
 
 @author: ceolin
 """
@@ -10,11 +10,9 @@ import os
 from skimage import io, transform
 import numpy as np
 import open3d as o3d
-import copy
 from skimage import morphology
-from skimage.measure import label, regionprops, block_reduce
-from scipy import stats
-import matplotlib.pyplot as plt
+from skimage.measure import label, regionprops
+from scipy.signal import find_peaks
 from tifffile import imsave
 from tqdm import tqdm
 
@@ -24,7 +22,7 @@ else:
     from src.aux_pcd_functions  import pcd_to_image, image_to_pcd
 
 def preprocess_and_segment_images(
-    read_folder, destination_folder, downscaling=(2,2,2), bit_depth=8, only_on_new_files = True,\
+    read_folder, destination_folder, downscaling=(1,1,1), bit_depth=8, only_on_new_files = True,\
     database_filename = 'DatasetInformation.xlsx'):
     
     '''
@@ -34,12 +32,12 @@ def preprocess_and_segment_images(
         path of the folder containing the raw data.
     destination_folder : str
         path of the folder where preprocessed images will be saved.
-    downscaling: (float, float, float)
+    downscaling: (float, float, float), optional
         downscaling factor along z, x, y, in pixels.
-    bit_depth: int
+    bit_depth: int, optional
         bit depth of raw data
     database_filename : str, optional
-        name of the database file included with the raw data. 
+        name of the excel file(s) included with the raw data. 
         The default is 'DatasetInformation.xlsx'.
 
     Returns
@@ -47,9 +45,12 @@ def preprocess_and_segment_images(
     None.
     
     The function collects raw images across all subfolders in the provided folder.
-    It removes duplicated images, downscale and pad the images, run the segmentation
-    algorithm and save the final 3d stacks after segmentation has been used to select 
-    only the surface of the fly in the original z-stack
+    It removes duplicated images, downscale and pad the images, run a segmentation
+    algorithm that selects only the surface of the fly in the original z-stack and 
+    save the final 3d stacks in the destination folder.
+    
+    NOTE: Channel 1 is used as a reference for segmentation. The preprocessed
+    images are rescaled to 16 bits.
 
     '''
     
@@ -59,44 +60,58 @@ def preprocess_and_segment_images(
     raw_data_df = create_raw_images_database(read_folder, database_filename)
     
     if len(raw_data_df) == 0:
-        print('No dataset information files with the given name have been found')
+        print(database_filename+': file not found in the input folder or its subfolders.')
         return
     
-    # clean the destination directory:
+    # In case we want to reanalyze the entire dataset clean the destination directory:
     if only_on_new_files == False:
         for f in os.listdir(destination_folder):
             os.remove(os.path.join(destination_folder, f))
     
     # Look for the database file of the preprocessed images to check which 
     # images have been already processed:
-        
     try: 
         DatasetInfoPreproc = pd.read_excel(os.path.join(destination_folder,database_filename))
+    # if the file doesn't exist create an empty dataframe
     except:
         DatasetInfoPreproc = pd.DataFrame(columns = ["experiment", "filename_gfp", "filename_dsred", "filename_tl"])
         
     # run row by row over database of files, downsample, segment and save the images,
     # return filenames to create new DatasetInformation.xlsx file in the destination folder
-   
     print("Preprocessing of raw images in progress:")
-
     new_columns = ["experiment", "filename_gfp", "filename_dsred", "filename_tl"]
     raw_data_df[new_columns] = raw_data_df.progress_apply(lambda row: \
     preprocess_and_save(row["image file name"], row["folder"], downscaling, bit_depth, destination_folder, DatasetInfoPreproc), axis=1)
     
-    #raw_data_df = raw_data_df.explode('image file name')
+    # remove rows with NaNs and save the dataframe as an excel file
     raw_data_df = raw_data_df[raw_data_df['experiment'].notna()]
     raw_data_df.to_excel(os.path.join(destination_folder,'DatasetInformation.xlsx'))
 
     return
 
-def create_raw_images_database(root_folder, database_filename = 'DatasetInformation.xlsx'):
+def create_raw_images_database(raw_data_folder, database_filename = 'DatasetInformation.xlsx'):
+    """
+    Parameters
+    ----------
+    raw_data_folder : str
+        path of the folder containing the raw data.
+    database_filename : str, optional
+        name of the excel file(s) included with the raw data. 
+        The default is 'DatasetInformation.xlsx'.
+
+    Returns
+    -------
+    raw_data_df : pandas dataframe
+        dataframe containing the filenames of all the input raw images in all 
+        subfolders, after removing duplicated files.
+
+    """
     raw_data_df = pd.DataFrame()
-    for root, subdirectories, files in os.walk(root_folder):
-        filename = os.path.join(root,database_filename)
+    for directory, subdirectories, files in os.walk(raw_data_folder):
+        filename = os.path.join(directory, database_filename)
         try:
             DatasetInfo = pd.read_excel(filename)
-            DatasetInfo['folder'] = str(os.path.join(root,''))
+            DatasetInfo['folder'] = str(os.path.join(directory,''))
             raw_data_df = raw_data_df.append(DatasetInfo)
         except:
             pass
@@ -104,16 +119,44 @@ def create_raw_images_database(root_folder, database_filename = 'DatasetInformat
     raw_data_df['File_exists'] = raw_data_df.apply(lambda row: \
     pd.Series(os.path.isfile(os.path.join(row['folder'], 'C1-'+row['image file name']))), axis=1)
 
-
     raw_data_df = raw_data_df[raw_data_df['File_exists']]
-    
-    # Remove duplicated filenames:
     raw_data_df = raw_data_df.drop_duplicates(subset='image file name', keep="last")
     
     return raw_data_df
 
 
 def preprocess_and_save(image_file_name, folder, downscaling, bit_depth, destination_folder, DatasetInfoPreproc):
+    """
+    Parameters
+    ----------
+    image_file_name : str
+        name of the image stack to preprocess.
+    folder : str
+        name of the input data folder.
+    downscaling: (float, float, float)
+        downscaling factor along z, x, y, in pixels.
+    bit_depth: int
+        bit depth of raw data.
+    destination_folder : str
+        path of the folder where preprocessed images will be saved.
+    DatasetInfoPreproc : pandas dataframe
+        dataframe containing the filename of the preprocessed images, used to 
+        check if an image should be skipped in the preprocessing.
+
+    Returns
+    -------
+    pandas series
+        return the name of the original image stack and the names of the three
+        preprocessed channels.
+        
+    This function downscale and pad the three channels of one image stack, 
+    runs a segmentation algorithm on the first channel to selects only the 
+    surface of the fly save the final 3d stacks in the destination folder.
+    
+    NOTE: Channel 1 is used as a reference for segmentation. The preprocessed
+    images are rescaled to 16 bits.
+
+    """
     filename_GFP = os.path.join(folder,'C1-'+image_file_name)
     filename_DsRed = os.path.join(folder,'C2-'+image_file_name)
     filename_TL = os.path.join(folder,'C3-'+image_file_name)
@@ -127,8 +170,7 @@ def preprocess_and_save(image_file_name, folder, downscaling, bit_depth, destina
         image_TL = io.imread(filename_TL)
 
     except:
-        print("File not found")
-        print(filename_TL)
+        print("File not found: " +image_file_name)
         image_GFP = float("NaN")
         image_DsRed = float("NaN")
         image_TL = float("NaN")
@@ -233,7 +275,7 @@ def segmentation_with_optimized_thresh(image, threshold = 1.05, max_iter = 200, 
     Returns
     -------
     thresholded_image: numpy array.
-        a binary mask of the segmented volume.
+        a 3D binary mask of the segmented volume.
 
     """
     thresholded_image = image > threshold*np.mean(image)
@@ -264,12 +306,12 @@ def segmentation_with_optimized_thresh(image, threshold = 1.05, max_iter = 200, 
 
 def image_padding(image, padding = 20, cval = 0):
     """
-    Padding of a 3d image with a constant value
+    Padding of a 3D image with a constant value
     
     Parameters
     ----------
-    image : 3d numpy array
-        3d image.
+    image : 3D numpy array
+        3D image.
     padding : int, optional
         extent of the padding. The default is 20.
     cval: int, optional
@@ -277,8 +319,8 @@ def image_padding(image, padding = 20, cval = 0):
 
     Returns
     -------
-    padded_image : TYPE
-        DESCRIPTION.
+    padded_image : 3d numpy array
+        the padded image.
 
     """
     shape = np.asarray(np.shape(image))
@@ -288,8 +330,8 @@ def image_padding(image, padding = 20, cval = 0):
 
 def clean_up_segmented_image(binary_image, image, closing_r = 4, dilation_r = 8, mesh_radius = 30):
     """
-    This function refines the segmentation of a surface in a 3d image using 
-    morphological transformations (closing, dilation), selecting local maxima 
+    This function refines the segmentation of a surface in a 3D image using 
+    morphological transformations (closing & dilation), selecting local maxima 
     along the z direction, and fitting a mesh through the maxima to fill holes.
 
     Parameters
@@ -306,7 +348,8 @@ def clean_up_segmented_image(binary_image, image, closing_r = 4, dilation_r = 8,
 
     Returns
     -------
-    None.
+    final_image : 3d numpy array
+        a 3D binary mask of the segmented volume.
 
     """
     
@@ -331,8 +374,6 @@ def clean_up_segmented_image(binary_image, image, closing_r = 4, dilation_r = 8,
         
     uni_down_pcd = pcd.uniform_down_sample(every_k_points=3)
     cleaned_pcd = uni_down_pcd
-    #cleaned_pcd, ind = uni_down_pcd.remove_radius_outlier(nb_points=4, radius=closing_r)
-    #cleaned_pcd, ind =  cleaned_pcd.remove_radius_outlier(nb_points=4, radius=closing_r)
     
     # Downsampling the point cloud to make the sampling more uniform:
     cleaned_pcd = cleaned_pcd.voxel_down_sample(voxel_size=5)
@@ -359,30 +400,31 @@ def clean_up_segmented_image(binary_image, image, closing_r = 4, dilation_r = 8,
 
     return final_image
 
-from scipy.signal import find_peaks
-def local_maxima_z(image, dist):
+
+def local_maxima_z(image, min_dist):
     """
-    This function creates a mask of the image which select the local maxima along 
-    the z direction which are separated by a minimum distance,
+    This function creates a mask of the image which selects the local maxima along 
+    the z direction which are separated by a minimum distance.
     
     Parameters
     ----------
-    image : TYPE
-        DESCRIPTION.
-    dist : TYPE
-        DESCRIPTION.
+    image : 3D numpy array
+        3D image.
+    min_dist : int
+        minimum distance for local maxima.
 
     Returns
     -------
-    None.
-
+    mask_local_maxima_z : 3d numpy array
+        a 3D binary mask of the segmented volume.
     """
+    
     # maxima along z
     mask_local_maxima_z = np.zeros(image.shape)
     
     for i in range(image.shape[1]):
         for j in range(image.shape[2]):
-            peaks, _ = find_peaks(image[:,i,j], distance = dist)
+            peaks, _ = find_peaks(image[:,i,j], distance = min_dist)
             for p in peaks:
                 mask_local_maxima_z[p,i,j] = 1
     
@@ -393,8 +435,8 @@ def local_maxima_z(image, dist):
 if __name__ == '__main__':
     
     ## %matplotlib qt  ##
-    read_data_folder = "../../data_2/01_raw"
-    destination_folder = "../../data_2/02_preprocessed"
+    read_data_folder = "../../data/01_raw"
+    destination_folder = "../../data/02_preprocessed"
     preprocess_and_segment_images(read_data_folder, destination_folder, downscaling = [1,2.5,2.5] , bit_depth = 12)
 
 

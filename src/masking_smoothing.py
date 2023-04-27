@@ -176,11 +176,11 @@ def aux_save_image(image, filename, folder):
 if __name__ == '__main__':
     
     ## %matplotlib qt  ##
-    destination_folder = "/media/ceolin/Data/Lab Gompel/Projects/Fly_Abdomens/data_2/07_masked_and_smooth"
-    read_folder = "/media/ceolin/Data/Lab Gompel/Projects/Fly_Abdomens/data_2/06_warped"
-    mask = '/media/ceolin/Data/Lab Gompel/Projects/Fly_Abdomens/data_2/References_and_masks/2D_mask_abdomen_2.tif'
-    database_registered_images = "/media/ceolin/Data/Lab Gompel/Projects/Fly_Abdomens/data_2/06_warped/dataframe_info.csv"
-    database_info = "/media/ceolin/Data/Lab Gompel/Projects/Fly_Abdomens/data_2/04_projected/DatasetInformation.xlsx"
+    destination_folder = "../../data/07_masked_and_smooth"
+    read_folder = "../../data/06_warped"
+    mask = '../../data/References_and_masks/2D_mask_abdomen_2.tif'
+    database_registered_images = "../../data/06_warped/dataframe_info.csv"
+    database_info = "../../data/04_projected/DatasetInformation.xlsx"
     
     
     preprocess_registered_images(read_folder, destination_folder, database_registered_images, database_info, mask_filename = mask, smoothing_sigma=4, binning=1)

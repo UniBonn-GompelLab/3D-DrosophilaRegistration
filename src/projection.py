@@ -434,11 +434,11 @@ def fly_abdomen_spline_projection(image_stack_ref, image_stack_signal, image_sta
 
 if __name__ == '__main__':
     
-    read_folder = "../../data_2/03_registered"
-    destination_folder = "../../data_2/04_projected"
-    landmark_folder = "../../data_2/05_landmarks/data"
-    abdomen_mask_file = "../../data_2/References_and_masks/Reference_abdomen_mask_iso_thick.tif"
-    abdomen_shape_reference_file = "../../data_2/References_and_masks/Reference_abdomen_mask_iso.tif"
+    read_folder = "../../data/03_registered"
+    destination_folder = "../../data/04_projected"
+    landmark_folder = "../../data/05_landmarks/data"
+    abdomen_mask_file = "../../data/References_and_masks/Reference_abdomen_mask_iso_thick.tif"
+    abdomen_shape_reference_file = "../../data/References_and_masks/Reference_abdomen_mask_iso.tif"
 
 
 

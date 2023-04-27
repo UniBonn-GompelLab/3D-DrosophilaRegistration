@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Function(s) to register 3d stacks of fly abdomens
+Function(s) to register 3D stacks of fly abdomens
 
 @author: ceolin
 """
@@ -334,11 +334,11 @@ def refine_registration_PointToPlane(source, target, threshold, downsampling_rad
 if __name__ == '__main__':
 
     
-    read_folder = "../../data_2/02_preprocessed"
-    destination_folder = "../../data_2/03_registered"
+    read_folder = "../../data/02_preprocessed"
+    destination_folder = "../../data/03_registered"
     
-    reference_fly_filename = "../../data_2/References_and_masks/C1_Reference_iso.tif"
-    abdomen_mask_file = "../../data_2/References_and_masks/Reference_abdomen_mask_iso.tif"
+    reference_fly_filename = "../../data/References_and_masks/C1_Reference_iso.tif"
+    abdomen_mask_file = "../../data/References_and_masks/Reference_abdomen_mask_iso.tif"
 
     df_name = "DatasetInformation.xlsx"
     
