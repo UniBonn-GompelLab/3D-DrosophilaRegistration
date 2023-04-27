@@ -5,8 +5,9 @@ Functions to preprocess and segment 3d stacks of fly abdomens
 
 @author: ceolin
 """
-import pandas as pd
+
 import os
+import pandas as pd
 from skimage import io, transform
 import numpy as np
 import open3d as o3d
@@ -65,23 +66,23 @@ def preprocess_and_segment_images(
     
     # In case we want to reanalyze the entire dataset clean the destination directory:
     if only_on_new_files == False:
-        for f in os.listdir(destination_folder):
-            os.remove(os.path.join(destination_folder, f))
+        for file in os.listdir(destination_folder):
+            os.remove(os.path.join(destination_folder, file))
     
     # Look for the database file of the preprocessed images to check which 
     # images have been already processed:
     try: 
-        DatasetInfoPreproc = pd.read_excel(os.path.join(destination_folder,database_filename))
+        preproc_df = pd.read_excel(os.path.join(destination_folder,database_filename))
     # if the file doesn't exist create an empty dataframe
-    except:
-        DatasetInfoPreproc = pd.DataFrame(columns = ["experiment", "filename_gfp", "filename_dsred", "filename_tl"])
+    except FileNotFoundError:
+        preproc_df = pd.DataFrame(columns = ["experiment", "filename_gfp", "filename_dsred", "filename_tl"])
         
     # run row by row over database of files, downsample, segment and save the images,
     # return filenames to create new DatasetInformation.xlsx file in the destination folder
     print("Preprocessing of raw images in progress:")
     new_columns = ["experiment", "filename_gfp", "filename_dsred", "filename_tl"]
     raw_data_df[new_columns] = raw_data_df.progress_apply(lambda row: \
-    preprocess_and_save(row["image file name"], row["folder"], downscaling, bit_depth, destination_folder, DatasetInfoPreproc), axis=1)
+    preprocess_and_save(row["image file name"], row["folder"], downscaling, bit_depth, destination_folder, preproc_df), axis=1)
     
     # remove rows with NaNs and save the dataframe as an excel file
     raw_data_df = raw_data_df[raw_data_df['experiment'].notna()]
@@ -107,13 +108,13 @@ def create_raw_images_database(raw_data_folder, database_filename = 'DatasetInfo
 
     """
     raw_data_df = pd.DataFrame()
-    for directory, subdirectories, files in os.walk(raw_data_folder):
+    for directory, _, _ in os.walk(raw_data_folder):
         filename = os.path.join(directory, database_filename)
         try:
-            DatasetInfo = pd.read_excel(filename)
-            DatasetInfo['folder'] = str(os.path.join(directory,''))
-            raw_data_df = raw_data_df.append(DatasetInfo)
-        except:
+            dataset_info = pd.read_excel(filename)
+            dataset_info['folder'] = str(os.path.join(directory,''))
+            raw_data_df = raw_data_df.append(dataset_info)
+        except FileNotFoundError:
             pass
 
     raw_data_df['File_exists'] = raw_data_df.apply(lambda row: \
@@ -125,7 +126,7 @@ def create_raw_images_database(raw_data_folder, database_filename = 'DatasetInfo
     return raw_data_df
 
 
-def preprocess_and_save(image_file_name, folder, downscaling, bit_depth, destination_folder, DatasetInfoPreproc):
+def preprocess_and_save(image_file_name, folder, downscaling, bit_depth, destination_folder, preproc_df):
     """
     Parameters
     ----------
@@ -139,7 +140,7 @@ def preprocess_and_save(image_file_name, folder, downscaling, bit_depth, destina
         bit depth of raw data.
     destination_folder : str
         path of the folder where preprocessed images will be saved.
-    DatasetInfoPreproc : pandas dataframe
+    preproc_df : pandas dataframe
         dataframe containing the filename of the preprocessed images, used to 
         check if an image should be skipped in the preprocessing.
 
@@ -157,63 +158,58 @@ def preprocess_and_save(image_file_name, folder, downscaling, bit_depth, destina
     images are rescaled to 16 bits.
 
     """
-    filename_GFP = os.path.join(folder,'C1-'+image_file_name)
-    filename_DsRed = os.path.join(folder,'C2-'+image_file_name)
-    filename_TL = os.path.join(folder,'C3-'+image_file_name)
+    filename_c1 = os.path.join(folder,'C1-'+image_file_name)
+    filename_c2 = os.path.join(folder,'C2-'+image_file_name)
+    filename_c3 = os.path.join(folder,'C3-'+image_file_name)
 
-    if os.path.splitext(image_file_name)[0] in DatasetInfoPreproc['experiment'].values:
+    if os.path.splitext(image_file_name)[0] in preproc_df['experiment'].values:
         return pd.Series([os.path.splitext(image_file_name)[0], 'Preprocessed_C1-'+image_file_name,'Preprocessed_C2-'+image_file_name, 'Preprocessed_C3-'+image_file_name])
     
     try:
-        image_GFP = io.imread(filename_GFP)
-        image_DsRed = io.imread(filename_DsRed)
-        image_TL = io.imread(filename_TL)
+        image_c1 = io.imread(filename_c1)
+        image_c2 = io.imread(filename_c2)
+        image_c3 = io.imread(filename_c3)
 
-    except:
+    except FileNotFoundError:
         print("File not found: " +image_file_name)
-        image_GFP = float("NaN")
-        image_DsRed = float("NaN")
-        image_TL = float("NaN")
+        image_c1 = float("NaN")
+        image_c2 = float("NaN")
+        image_c3 = float("NaN")
         return pd.Series([float("NaN"), float("NaN"), float("NaN"), float("NaN")])
 
     # rescale images to 16bits:    
     max_value = 2**bit_depth-1
   
-    image_DsRed = image_DsRed*65536/max_value
-    image_GFP = image_GFP*65536/max_value
-    image_TL = image_TL*65536/max_value
+    image_c1 = image_c1*65536/max_value
+    image_c2 = image_c2*65536/max_value
+    image_c3 = image_c3*65536/max_value
     
     # Resizing of the images:
-    new_image_shape = [int(image_DsRed.shape[i]/downscaling[i]) for i in range(3)]
-    image_GFP_downscaled = transform.resize(image_GFP, new_image_shape, preserve_range = True)
-    image_DsRed_downscaled = transform.resize(image_DsRed, new_image_shape, preserve_range = True)
-    image_TL_downscaled = transform.resize(image_TL, new_image_shape, preserve_range = True)
+    new_image_shape = [int(image_c1.shape[i]/downscaling[i]) for i in range(3)]
+    image_c1_downscaled = transform.resize(image_c1, new_image_shape, preserve_range = True)
+    image_c2_downscaled = transform.resize(image_c2, new_image_shape, preserve_range = True)
+    image_c3_downscaled = transform.resize(image_c3, new_image_shape, preserve_range = True)
 
-    # Segmentation:
-    thresholded = segmentation_with_optimized_thresh(image_GFP_downscaled)
-    
-    # Make sure there are no zero pixels in the original image:
-    image_GFP_downscaled = image_GFP_downscaled
-    image_DsRed_downscaled = image_DsRed_downscaled
-    image_TL_downscaled = image_TL_downscaled
+    # Segmentation on channel 1:
+    thresholded = segmentation_with_optimized_thresh(image_c1_downscaled)
         
     # Padding:
-    image_GFP_downscaled    = image_padding(image_GFP_downscaled)
-    image_DsRed_downscaled  = image_padding(image_DsRed_downscaled)
-    image_TL_downscaled     = image_padding(image_TL_downscaled)
-    thresholded             = image_padding(thresholded)
+    image_c1_downscaled  = image_padding(image_c1_downscaled)
+    image_c2_downscaled  = image_padding(image_c2_downscaled)
+    image_c3_downscaled  = image_padding(image_c3_downscaled)
+    thresholded          = image_padding(thresholded)
     
     # Clean up the segmentation with morphological transformations:
-    thresholded = clean_up_segmented_image(thresholded, image_GFP_downscaled)
+    thresholded = clean_up_segmented_image(thresholded, image_c1_downscaled)
     
     # Apply the mask (thresholded image) to all channels:
-    segmented_image_GFP = (image_GFP_downscaled)*thresholded
-    segmented_image_DsRed = (image_DsRed_downscaled)*thresholded
-    segmented_image_TL = (image_TL_downscaled)*thresholded
+    segmented_image_c1 = (image_c1_downscaled)*thresholded
+    segmented_image_c2 = (image_c2_downscaled)*thresholded
+    segmented_image_c3 = (image_c3_downscaled)*thresholded
     
     # Save the segmented images:
-    image_file_names = [os.path.basename(filename_GFP), os.path.basename(filename_DsRed), os.path.basename(filename_TL)]
-    preprocessed_images = [segmented_image_GFP, segmented_image_DsRed, segmented_image_TL]
+    image_file_names    = [os.path.basename(filename_c1), os.path.basename(filename_c2), os.path.basename(filename_c3)]
+    preprocessed_images = [segmented_image_c1, segmented_image_c2, segmented_image_c3]
     new_file_names = aux_save_images(preprocessed_images, image_file_names, "Preprocessed_", destination_folder)
     
     return pd.Series([os.path.splitext(image_file_name)[0], new_file_names[0], new_file_names[1], new_file_names[2]])
@@ -284,7 +280,6 @@ def segmentation_with_optimized_thresh(image, threshold = 1.05, max_iter = 200, 
     step = 0.01
     
     n_iterations = 1
-    delta_segmented_fraction = 0
     
     while ((segm_fract > fraction_range[1]) or (segm_fract < fraction_range[0])) and n_iterations < max_iter:
         if segm_fract > fraction_range[1]:
@@ -367,7 +362,7 @@ def clean_up_segmented_image(binary_image, image, closing_r = 4, dilation_r = 8,
     # To fill potential holes in the segmented object we create a point cloud object
     # from the mask, and fit a mesh on the points.
     
-    pcd, pcd_values = image_to_pcd(thresholded_image)
+    pcd, _ = image_to_pcd(thresholded_image)
     
     # Remove isolated points from the points cloud, based on the number of 
     # neighbours within a given radius:
@@ -425,8 +420,8 @@ def local_maxima_z(image, min_dist):
     for i in range(image.shape[1]):
         for j in range(image.shape[2]):
             peaks, _ = find_peaks(image[:,i,j], distance = min_dist)
-            for p in peaks:
-                mask_local_maxima_z[p,i,j] = 1
+            for peak in peaks:
+                mask_local_maxima_z[peak,i,j] = 1
     
     return mask_local_maxima_z
 
