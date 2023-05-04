@@ -566,18 +566,19 @@ def create_registration_window(shared, df_landmarks, df_model, df_files):
     while True:
         event, values = registration_window.read()
         
-        if values["-MULTI-CHANNEL-"] == True:
-            registration_window.Element('-TEXT-CH-').Update(visible=True)
-            registration_window.Element('-EXTRA-CHANNELS-FOLDERS-').Update(visible=True)
-            registration_window.Element('-TEXT-CH2-').Update(visible=True)
-            registration_window.Element('-REFERENCE-CHANNEL-').Update(visible=True)
-
-        if values["-MULTI-CHANNEL-"] == False:
-            registration_window.Element('-TEXT-CH-').Update(visible=False)
-            registration_window.Element('-EXTRA-CHANNELS-FOLDERS-').Update(visible=False)
-            registration_window.Element('-TEXT-CH2-').Update(visible=False)
-            registration_window.Element('-REFERENCE-CHANNEL-').Update(visible=False)
-                
+        if event == '-MULTI-CHANNEL-':
+            
+            if values["-MULTI-CHANNEL-"] == True:
+                registration_window.Element('-TEXT-CH-').Update(visible=True)
+                registration_window.Element('-EXTRA-CHANNELS-FOLDERS-').Update(visible=True)
+                registration_window.Element('-TEXT-CH2-').Update(visible=True)
+                registration_window.Element('-REFERENCE-CHANNEL-').Update(visible=True)
+    
+            if values["-MULTI-CHANNEL-"] == False:
+                registration_window.Element('-TEXT-CH-').Update(visible=False)
+                registration_window.Element('-EXTRA-CHANNELS-FOLDERS-').Update(visible=False)
+                registration_window.Element('-TEXT-CH2-').Update(visible=False)
+                registration_window.Element('-REFERENCE-CHANNEL-').Update(visible=False)
 
         if event == '-REGISTRATION-SAVE-':
             # Index for loading bar:
@@ -700,7 +701,7 @@ def create_registration_window(shared, df_landmarks, df_model, df_files):
             
         if event == "Exit" or event == sg.WIN_CLOSED:
             registration_window.close()
-            break
+            return
 
     registration_window.close()
     

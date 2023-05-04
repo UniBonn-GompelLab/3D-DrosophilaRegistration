@@ -10,10 +10,15 @@
 
 if __name__ == '__main__':
     from _TPS_helpers import *
+    from PIL import Image
+    import numpy as np
+    from matplotlib import pyplot as plt
 else:
     from ._TPS_helpers import *
     
-def TPSwarping(img, c_src, c_dst, dshape=(512,512)):
+from scipy import ndimage
+    
+def TPSwarping(img, c_src, c_dst, dshape = (512,512)):
     """
     NAME    	Registration.TPSwarping
 
@@ -33,16 +38,24 @@ def TPSwarping(img, c_src, c_dst, dshape=(512,512)):
     warped : Warped image
 
     """
-
+    if len(img.shape) > 2:
+        
+        raise TypeError("The img has multiple channels, TPSWarping only accepts 2D grayscale images.")
+    
     dshape = dshape or img.shape
 
     theta = tps_theta_from_points(c_src, c_dst, reduced=True)
     grid = tps_grid(theta, c_dst, dshape)
     mapx, mapy = tps_grid_to_remap(grid, img.shape)
-
-    return cv2.remap(img, mapx, mapy, cv2.INTER_CUBIC,borderMode=0)
+    mapping = np.array([mapy, mapx])
+    
+    return ndimage.map_coordinates(img, mapping , order=3)
 
 def show_warped(img, warped):
+    """
+    Used only for testing. Plots the original and warped version of the test image.
+
+    """
     fig, axs = plt.subplots(1, 2, figsize=(16,8))
     axs[0].axis('off')
     axs[1].axis('off')
@@ -58,7 +71,8 @@ if __name__ == '__main__':
     import os
     parent = Path(__file__).parents[2]
     img_path = os.path.join(os.path.join(parent,"test_data"),"image.png")
-    img = cv2.imread(img_path)
+    img = Image.open(img_path)
+    img = np.asarray(img)[:,:,2]
     
     c_src = np.array([
         [0.0, 0.0],
@@ -78,6 +92,6 @@ if __name__ == '__main__':
         [0.6, 0.6],
     ])
         
-    warped = TPSwarping(img, c_src, c_dst, dshape=(512, 512))
+    warped = TPSwarping(img, c_src, c_dst, dshape=img.shape)
     show_warped(img, warped)
 

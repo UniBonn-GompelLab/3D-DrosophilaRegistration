@@ -6,6 +6,7 @@ Function(s) to transform 3D images in point clouds and viceversa.
 @author: ceolin
 """
 
+import sys
 import numpy as np
 import open3d as o3d
 from skimage import morphology
@@ -36,15 +37,20 @@ def pcd_to_image(pcd, pcd_values, image_shape):
     image = np.zeros(image_shape)
     points_count = np.zeros(image_shape)
     assert len(pcd_values) == pcd_array.shape[-1],\
-           " the number of points in the pcd object doesn't match the number of britghness values."
+           " ERROR: the number of points in the pcd object doesn't match the number of britghness values."
 
+    index_error_flag = False
+    
     for i in range(pcd_array.shape[-1]):
         pos = tuple(pcd_array[...,i])
         try:
             image[pos] += pcd_values[i]
             points_count[pos] += 1
         except IndexError:
-            print("The point cloud does not fit the required image shape.")
+            index_error_flag = True
+            
+    if index_error_flag:
+        print("Warning: The point cloud does not fit the image shape. Part of the object will be cropped.",  file=sys.stderr)
 
     # average the birghtness in voxels containing multiple points:
     image[points_count>1] = image[points_count>1]/points_count[points_count>1]

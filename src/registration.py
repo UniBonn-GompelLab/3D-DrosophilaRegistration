@@ -1,172 +1,199 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Function(s) to register 3D stacks of fly abdomens
+Function(s) to manually register a series of 3D image stacks with multiple separate
+channels and save the registered images.
 
 @author: ceolin
 """
 
-import pandas as pd
+import sys
 import os
+import copy
 from io import StringIO
+import pandas as pd
 from skimage import io
 import numpy as np
 import open3d as o3d
-import copy
 from tifffile import imsave
 from tqdm import tqdm
-import sys
 
 if __name__ == '__main__':
-    from aux_pcd_functions  import pcd_to_image, image_to_pcd
+    from aux_pcd_functions import pcd_to_image, image_to_pcd
 else:
-    from src.aux_pcd_functions  import pcd_to_image, image_to_pcd
-    
-    
-def registration_of_abdomens_3D(
-        preprocessed_data_df, preprocessed_folder, reference_fly_filename,\
-        abdomen_mask_filename, destination_folder, only_on_new_files = False, \
-        database_filename = 'DatasetInformation.xlsx'):
-    '''
-    Parameters
-    ----------
-    preprocessed_data_df : pandas dataframe 
-        dataframe listing all preprocessed image files and the corresponding
-        genotype.
-    
-    preprocessed_folder: str 
-        folder were preprocessed images are saved.
-    
-    reference_fly_filename: str
-        path to the reference abdomen file.
-    
-    abdomen_mask_filename: str
-        path to the mask to sleect only the abdomen.
-    
-    destination_folder: str
-        folder were registered images will be saved.
-
-    '''
-
-    tqdm.pandas()
-    preprocessed_folder = os.path.join(preprocessed_folder,'')
-    
-
-    # clean the destination directory:
-    if only_on_new_files == False:
-        for f in os.listdir(destination_folder):
-            os.remove(os.path.join(destination_folder, f))
-            
-    try: 
-        DatasetInfoRegistered = pd.read_excel(os.path.join(destination_folder,database_filename))
-    except:
-        DatasetInfoRegistered = pd.DataFrame(columns = ["image file name", "quality", "experiment", "construct",  "folder", "filename_gfp", "filename_dsred", "filename_tl"])
+    from src.aux_pcd_functions import pcd_to_image, image_to_pcd
 
 
-    print("Registration of 3D stacks in progress:")
-    reference_fly = io.imread(reference_fly_filename)
-    
-    with tqdm(total=preprocessed_data_df.shape[0]) as pbar:    
-        
-        for index, row in preprocessed_data_df.iterrows():
-        
-            result = register_and_save(row["image file name"], row["filename_gfp"], row["filename_dsred"], row["filename_tl"], preprocessed_folder, reference_fly, destination_folder, DatasetInfoRegistered)
-            
-            if result is not None:
-                temp_df = pd.concat([DatasetInfoRegistered, row.to_frame().transpose()], join = "outer", ignore_index=True)
-                temp_df = temp_df[DatasetInfoRegistered.columns]
-                DatasetInfoRegistered = temp_df
-                DatasetInfoRegistered.loc[DatasetInfoRegistered['image file name'] == row["image file name"], "filename_gfp"]= result[0]
-                DatasetInfoRegistered.loc[DatasetInfoRegistered['image file name'] == row["image file name"], "filename_dsred"] = result[1]
-                DatasetInfoRegistered.loc[DatasetInfoRegistered['image file name'] == row["image file name"], "filename_tl"]  = result[2]
-                DatasetInfoRegistered.loc[DatasetInfoRegistered['image file name'] == row["image file name"], "folder"] = destination_folder
-                DatasetInfoRegistered = DatasetInfoRegistered.reset_index(drop = True)
-                DatasetInfoRegistered.to_excel(os.path.join(destination_folder,'DatasetInformation.xlsx'), index = False)
-            
-            pbar.update(1)
-            
-        pbar.close()
-
-    return
-
-
-def register_and_save(image_file_name, filename_gfp, filename_dsred, filename_tl, folder, reference_fly, destination_folder, DatasetInfoRegistered):
+def run_manual_registration(
+        preprocessed_data_df, preprocessed_folder, reference_image_filename,
+        destination_folder, only_on_new_files=False,
+        database_filename='DatasetInformation.xlsx'):
     """
-    This function is used to manually register the three channels of one 
-    3d image stack, save the registered images in the destination folder 
-    and update the dataframe with the image information.
+    This function loops through all the preprocessed images, starts the manual
+    registration gui, saves the output registered images in the destination
+    folder and updates or creates the excel file with the information about each
+    image.
 
     Parameters
     ----------
-    image_file_name : str
-        original file name of the multichannel image stack.
-    filename_gfp : str
-        file name of the gfp channel.
-    filename_dsred : str
-        file name of the dsred channel.
-    filename_tl : str
-        file name of the transmitted light channel.
-    folder : str
-        folder where images are located.
-    reference_fly : 3d numpy array.
-        prealigned reference image, gfp channel only.
+    preprocessed_data_df : pandas dataframe
+        dataframe listing all preprocessed image files and the corresponding
+        genotype and additional info.
+    preprocessed_folder : str
+        folder were preprocessed images are saved.
+    reference_image_filename : str
+        path to the reference image to use in the registration.
     destination_folder : str
-        destination folder for registered images.
-    DatasetInfoRegistered : pandas dataframe
-        dataframe listing registered image files and the corresponding
-        genotype.
+        folder were registered images will be saved.
+    only_on_new_files : bool, optional
+        flag to skip images that ave been already registered. The default is False.
+    database_filename : str, optional
+        name of the excel file(s) included with the raw data.
+        The default is 'DatasetInformation.xlsx'.
 
     Returns
     -------
     None.
 
-    """ 
-    
-    if os.path.splitext(image_file_name)[0] in DatasetInfoRegistered['experiment'].values:
-        return None
+    """
+
+    tqdm.pandas()
+    preprocessed_folder = os.path.join(preprocessed_folder, '')
+
+    # clean the destination directory:
+    if not only_on_new_files:
+        for file in os.listdir(destination_folder):
+            os.remove(os.path.join(destination_folder, file))
 
     try:
-        Source_gfp   = io.imread( os.path.join(folder,filename_gfp) )
-        Source_dsred = io.imread( os.path.join(folder,filename_dsred) )
-        Source_tl    = io.imread( os.path.join(folder,filename_tl) )
-    except:
-        print("File not found!")
+        registered_df = pd.read_excel(os.path.join(
+            destination_folder, database_filename))
+    except FileNotFoundError:
+        registered_df = pd.DataFrame(columns=[
+                                     "image file name", "type", "folder", "experiment", "filename_c1", "filename_c2", "filename_c3"])
+
+    print("Registration of 3D stacks in progress:")
+    reference_image = io.imread(reference_image_filename)
+
+    with tqdm(total=preprocessed_data_df.shape[0]) as pbar:
+        # loop explicitly on all files to be able to save the excel file after
+        # each step.
+        for _, row in preprocessed_data_df.iterrows():
+
+            if os.path.splitext(row["image file name"])[0] in registered_df['experiment'].values:
+                pass
+
+            else:
+                registered_filenames = register_and_save_image_stack(
+                    row["image file name"], preprocessed_folder, reference_image, destination_folder)
+
+                registered_df = pd.concat(
+                    [registered_df, row.to_frame().transpose()], join="outer", ignore_index=True)
+
+                #temp_df = temp_df[registered_df.columns]
+
+                #registered_df = temp_df
+
+                registered_df.loc[registered_df['image file name']
+                                  == row["image file name"], "filename_c1"] = registered_filenames[0]
+                registered_df.loc[registered_df['image file name']
+                                  == row["image file name"], "filename_c2"] = registered_filenames[1]
+                registered_df.loc[registered_df['image file name']
+                                  == row["image file name"], "filename_c3"] = registered_filenames[2]
+                registered_df.loc[registered_df['image file name']
+                                  == row["image file name"], "folder"] = destination_folder
+                registered_df = registered_df.reset_index(drop=True)
+
+                registered_df.to_excel(os.path.join(
+                    destination_folder, 'DatasetInformation.xlsx'), index=False)
+
+            pbar.update(1)
+
+        pbar.close()
+
+    return
+
+
+def register_and_save_image_stack(image_file_name, input_folder, reference_image, destination_folder):
+    """
+    This function is used to manually register the three channels of one
+    3D image stack and save the registered images in the destination folder.
+
+    Parameters
+    ----------
+    image_file_name : str
+        original file name of the multichannel image stack.
+    input_folder : str
+    reference_image : 3d numpy array.
+        prealigned reference image.
+    destination_folder : str
+        destination folder for registered images.
+
+    Returns
+    -------
+    None.
+
+    """
+
+    filename_c1 = os.path.join(
+        input_folder, 'Preprocessed_C1-'+image_file_name)
+    filename_c2 = os.path.join(
+        input_folder, 'Preprocessed_C2-'+image_file_name)
+    filename_c3 = os.path.join(
+        input_folder, 'Preprocessed_C3-'+image_file_name)
+
+    try:
+        image_src_c1 = io.imread(filename_c1)
+        image_src_c2 = io.imread(filename_c2)
+        image_src_c3 = io.imread(filename_c3)
+
+    except FileNotFoundError:
+        print("File not found: " + image_file_name)
         return None
 
-    source_gfp, source_values_gfp = image_to_pcd(Source_gfp)
-    source_dsred, source_values_dsred = image_to_pcd(Source_dsred)
-    source_tl, source_values_tl = image_to_pcd(Source_tl)
-    target, target_values = image_to_pcd(reference_fly)
+    # Convert images in point clouds:
+    pcd_src_c1, src_values_c1 = image_to_pcd(image_src_c1)
+    pcd_src_c2, src_values_c2 = image_to_pcd(image_src_c2)
+    pcd_src_c3, src_values_c3 = image_to_pcd(image_src_c3)
+    pcd_target, target_values = image_to_pcd(reference_image)
 
     # Open the interface for manual registration:
-    transformation = _manual_registration(source_gfp, source_values_gfp, target, target_values)
-    source_gfp.transform(transformation)
-    source_dsred.transform(transformation)
-    source_tl.transform(transformation)
-    
+    transformation = manual_registration(
+        pcd_src_c1, src_values_c1, pcd_target, target_values)
+
+    # Apply the transformation on all channels:
+    pcd_src_c1.transform(transformation)
+    pcd_src_c2.transform(transformation)
+    pcd_src_c3.transform(transformation)
+
     # Draw the results:
-    draw_registration_result(source_gfp, target)
-    
+    draw_registration_result(pcd_src_c1, pcd_target)
+
     # Convert the registered point clouds to image stacks:
-    registered_source_image = pcd_to_image(source_gfp, source_values_gfp, reference_fly.shape)
-    registered_source_image_dsred = pcd_to_image(source_dsred, source_values_dsred, reference_fly.shape)
-    registered_source_image_tl = pcd_to_image(source_tl, source_values_tl, reference_fly.shape)
+    registered_source_image_c1 = pcd_to_image(
+        pcd_src_c1, src_values_c1, reference_image.shape)
+    registered_source_image_c2 = pcd_to_image(
+        pcd_src_c2, src_values_c2, reference_image.shape)
+    registered_source_image_c3 = pcd_to_image(
+        pcd_src_c3, src_values_c3, reference_image.shape)
 
     # Prepare filenames and save the registered images:
-    filename_GFP = os.path.join(folder,'C1-'+image_file_name)
-    filename_DsRed = os.path.join(folder,'C2-'+image_file_name)
-    filename_TL = os.path.join(folder,'C3-'+image_file_name)
+    filename_c1 = 'C1-'+image_file_name
+    filename_c2 = 'C2-'+image_file_name
+    filename_c3 = 'C3-'+image_file_name
 
-    image_file_names = [os.path.basename(filename_GFP), os.path.basename(filename_DsRed), os.path.basename(filename_TL)]
-    registered_images = [registered_source_image, registered_source_image_dsred, registered_source_image_tl]
-    new_file_names = aux_save_images(registered_images, image_file_names, "Registered_", destination_folder)
-    
-    return pd.Series([new_file_names[0], new_file_names[1], new_file_names[2]])
+    image_file_names = [filename_c1, filename_c2, filename_c3]
+    registered_images = [registered_source_image_c1,
+                         registered_source_image_c2, registered_source_image_c3]
+    new_file_names = aux_save_images(
+        registered_images, image_file_names, "Registered_", destination_folder)
 
-    
+    return [new_file_names[0], new_file_names[1], new_file_names[2]]
+
+
 def aux_save_images(images, names, prefix, folder):
     """
-    Save a list of images in a folder adding a common prefix to the filenames.
+    This function saves a list of images in a folder adding a common prefix to the filenames.
 
     Parameters
     ----------
@@ -186,24 +213,25 @@ def aux_save_images(images, names, prefix, folder):
 
     """
     file_names_list = list()
-    
+
     if isinstance(images, list):
         for count, image in enumerate(images):
-            
+
             filename = prefix+names[count]
-            imsave(os.path.join(folder,filename), image)
+            imsave(os.path.join(folder, filename), image)
             file_names_list.append(filename)
     else:
         filename = names
-        imsave(os.path.join(folder,filename), image)
+        imsave(os.path.join(folder, filename), image)
         file_names_list.append(filename)
-    
+
     return list(file_names_list)
 
-def draw_registration_result(source, target):
+
+def draw_registration_result(blue_pcd, yellow_pcd):
     """
-    Draw two point clouds in blue and yellow
-    
+    This function draws two point clouds in blue and yellow
+
     Parameters
     ----------
     source : point cloud
@@ -214,59 +242,71 @@ def draw_registration_result(source, target):
     None.
 
     """
-    source_temp = copy.deepcopy(source)
-    target_temp = copy.deepcopy(target)
-    source_temp.paint_uniform_color([1, 0.706, 0])
-    target_temp.paint_uniform_color([0, 0.651, 0.929])
-    o3d.visualization.draw_geometries([source_temp, target_temp])
-    
+    blue_pcd_temp = copy.deepcopy(blue_pcd)
+    yellow_pcd_temp = copy.deepcopy(yellow_pcd)
+    blue_pcd_temp.paint_uniform_color([1, 0.706, 0])
+    yellow_pcd_temp.paint_uniform_color([0, 0.651, 0.929])
+    o3d.visualization.draw_geometries([blue_pcd_temp, yellow_pcd_temp])
+
     return
 
-def _manual_registration(source, source_values, target, target_values):
+
+def manual_registration(source, source_values, target, target_values):
     """
+    This function shows two coloured pcd objects in a gui, allows the user to
+    pick corresponding points on each of them and calculate the affine
+    transformation mapping the source points cloud on the target points cloud.
+
     Parameters
     ----------
     source : pcd
     source_values : numpy array
     target : pcd
     target_values : numpy array
-    
+
     Returns
     -------
     transformation: open3d transformation
-    the affine transformation mapping the source points cloud on the target points cloud.
+    the affine transformation.
 
     """
     source_temp = copy.deepcopy(source)
     target_temp = copy.deepcopy(target)
-    
+
     bw_colors = 10*(source_values-np.min(source_values))/np.max(source_values)
-    source_temp.colors = o3d.utility.Vector3dVector(np.asarray([bw_colors, bw_colors, bw_colors]).T)
+    source_temp.colors = o3d.utility.Vector3dVector(
+        np.asarray([bw_colors, bw_colors, bw_colors]).T)
 
     bw_colors = 10*(target_values-np.min(target_values))/np.max(target_values)
-    target_temp.colors = o3d.utility.Vector3dVector(np.asarray([bw_colors, bw_colors, bw_colors]).T)
+    target_temp.colors = o3d.utility.Vector3dVector(
+        np.asarray([bw_colors, bw_colors, bw_colors]).T)
 
     # pick points from two point clouds and builds correspondences
     picked_id_source = pick_points(source_temp)
     picked_id_target = pick_points(target_temp)
-    
-    assert (len(picked_id_source) >= 3 and len(picked_id_target) >= 3)
-    assert (len(picked_id_source) == len(picked_id_target))
+
+    assert (len(picked_id_source) >= 3 and len(picked_id_target) >= 3),\
+        " ERROR: not enough points."
+    assert (len(picked_id_source) == len(picked_id_target)),\
+        " ERROR: different number of points in the reference and target images."
     corr = np.zeros((len(picked_id_source), 2))
     corr[:, 0] = picked_id_source
     corr[:, 1] = picked_id_target
 
     # estimate transformation:
-    p2p = o3d.pipelines.registration.TransformationEstimationPointToPoint(with_scaling=True)
-    transformation = p2p.compute_transformation(source, target, o3d.utility.Vector2iVector(corr))
+    p2p = o3d.pipelines.registration.TransformationEstimationPointToPoint(
+        with_scaling=True)
+    transformation = p2p.compute_transformation(
+        source, target, o3d.utility.Vector2iVector(corr))
 
     return transformation
 
 
 def pick_points(pcd):
     """
-    Visualize a point cloud object and allows the user to select a series of points
-    on the object. Returns the coordinates of the selected points.
+    This function visualizes a point cloud object in  a gui and allows the user
+    to select a series of points on the object.
+    Returns the coordinates of the selected points.
 
     Parameters
     ----------
@@ -274,10 +314,10 @@ def pick_points(pcd):
 
     Returns
     -------
-    selected points (pcd).
+    selected points: point cloud object
 
     """
-    
+
     # These are used to suppress the printed output from Open3D while picking points:
     stdout_old = sys.stdout
     sys.stdout = StringIO()
@@ -286,13 +326,14 @@ def pick_points(pcd):
     vis.create_window()
     vis.add_geometry(pcd)
     # user picks points
-    result = vis.run()  
+    result = vis.run()
     vis.destroy_window()
     # This restores the output:
     sys.stdout = stdout_old
     return vis.get_picked_points()
 
-def refine_registration_PointToPlane(source, target, threshold, downsampling_radius):
+
+def refine_registration_point_to_plane(source, target, threshold, downsampling_radius):
     """
     Parameters
     ----------
@@ -314,33 +355,31 @@ def refine_registration_PointToPlane(source, target, threshold, downsampling_rad
     # downsampling to accelerate computation:
     source_down = source.voxel_down_sample(downsampling_radius)
     target_down = target.voxel_down_sample(downsampling_radius)
-    
+
     # computing the normals for each point:
     source_down.estimate_normals()
     source_down.orient_normals_consistent_tangent_plane(k=30)
 
     target_down.estimate_normals()
     target_down.orient_normals_consistent_tangent_plane(k=30)
-    
+
     result = o3d.pipelines.registration.registration_icp(
         source_down, target_down, threshold, np.identity(4),
         o3d.pipelines.registration.TransformationEstimationPointToPlane(),
         o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=500))
-    
-    return result
 
+    return result
 
 
 if __name__ == '__main__':
 
-    
     read_folder = "../../data/02_preprocessed"
     destination_folder = "../../data/03_registered"
-    
+
     reference_fly_filename = "../../data/References_and_masks/C1_Reference_iso.tif"
-    abdomen_mask_file = "../../data/References_and_masks/Reference_abdomen_mask_iso.tif"
 
     df_name = "DatasetInformation.xlsx"
-    
-    preprocessed_df = pd.read_excel(os.path.join(read_folder,df_name))
-    registration_of_abdomens_3D(preprocessed_df, read_folder, reference_fly_filename, abdomen_mask_file, destination_folder, only_on_new_files = True)
+
+    preprocessed_df = pd.read_excel(os.path.join(read_folder, df_name))
+    run_manual_registration(preprocessed_df, read_folder, reference_fly_filename,
+                            destination_folder, only_on_new_files=True)
