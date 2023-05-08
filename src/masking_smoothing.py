@@ -19,7 +19,7 @@ from tqdm import tqdm
 
 def run_smoothing_masking(
         read_folder, destination_folder, df_warped, df_info,
-        mask_filename, smooth_x, smooth_y, bcg_types=None, bcg_channels=None, binning=None):
+        mask_filename, smooth_x, smooth_y, bcg_types=None, bcg_channels=None, refine_mask = True, binning=None):
     '''
     This function merges the information about the images in the two dataframes,
     calculates a common mask for all the images for each channel by refining the
@@ -65,7 +65,12 @@ def run_smoothing_masking(
     # create a mask for each channel:
     mask = np.asarray(Image.open(mask_filename))
     mask = mask / np.max(mask)
-    channel_masks = create_common_mask_for_each_channel(df_warped, mask)
+    if refine_mask:
+        channel_masks = create_common_mask_for_each_channel(df_warped, mask)
+    else:
+        channel_masks = {}
+        for channel in df_warped["channel"].unique():
+            channel_masks[channel] = mask
 
     # Initialize variables for fast smoothing:
     fft_gauss_kernel = fft_gaussian_smoothing_kernel(
@@ -73,8 +78,9 @@ def run_smoothing_masking(
 
     normalization_masks = {}
     for channel in df_warped["channel"].unique():
-        normalization_masks[channel] = (1 / aux_convolution(
+        norm_mask_tmp = (1 / aux_convolution(
             channel_masks[channel], fft_gauss_kernel)*mask+(mask == 0))*channel_masks[channel]
+        normalization_masks[channel] = np.nan_to_num(norm_mask_tmp)
 
     # create a dictionary with a background image for each channel in the dataset:
     if bcg_types:
@@ -174,12 +180,15 @@ def create_common_mask_for_each_channel(df_images, mask):
     """
     channel_masks = {}
     channel_names = df_images["channel"].unique()
-
+    gauss_kernel_fft = fft_gaussian_smoothing_kernel(mask.shape, 1, 1)
+    
     for channel in channel_names:
 
         df_channel = df_images[df_images["channel"] == channel]
         channel_image_paths = df_channel["full path"].values
         tmp_channel_mask = create_common_mask(channel_image_paths, mask)
+        # fill small holes in channel mask:
+        tmp_channel_mask = aux_convolution(tmp_channel_mask, gauss_kernel_fft )  > 0.5
         channel_masks[channel] = tmp_channel_mask
 
     return channel_masks
@@ -402,7 +411,7 @@ def aux_apply_mask(mask, image, rel_offset=0.01):
 
 def aux_convolution(image, fft_kernel):
     """
-    This function calculate a convultion between an image and an image kernel.
+    This function calculate a convolution between an image and an image kernel.
     It takes as input the image in the real space and the fourier transform of
     the kernel and returns the result of the convolution in the real space.
 
@@ -477,5 +486,5 @@ if __name__ == '__main__':
     df_info = pd.read_excel(database_info)
 
     run_smoothing_masking(read_folder, destination_folder, df_images, df_info,
-                          mask_filename=mask, smooth_x=4, smooth_y=4, bcg_types=['empty'], 
+                          mask_filename=mask, smooth_x=1, smooth_y=4, bcg_types=['empty'], 
                           bcg_channels=['C2'],  binning=None)
