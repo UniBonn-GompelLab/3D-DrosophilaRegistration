@@ -14,17 +14,19 @@ import pandas as pd
 import numpy as np
 from tifffile import imsave
 from tqdm import tqdm
-from scipy.signal import find_peaks
-from scipy.ndimage import convolve1d
 from skimage import io
 from skimage.filters import gaussian
-from scipy.interpolate import make_interp_spline
 from scipy import ndimage
+from scipy.signal import find_peaks
+from scipy.ndimage import convolve1d
+from scipy.interpolate import make_interp_spline
 
 
 def run_2D_projection(
         registered_df, registered_folder, destination_folder, landmark_folder,
-        ref_mask_filename, ref_shape_filename, crop_x=None, crop_y=None):
+        ref_mask_filename, ref_shape_filename, crop_x=None, crop_y=None,
+        projection_parameters={'min_y': 0, 'meridian_plane_x': 180,
+                               'spline_smoothing': 10, 'projection_radius': 8}):
     '''
     This function loops through all the registered images, calculate the 2D projection,
     crops the final images, saves them in the destination folder and updates or 
@@ -53,6 +55,8 @@ def run_2D_projection(
         if not None, crop the final image to crop_y size along the y axis.
         The image is cropped around its center.
         The default is None.
+    projection_parameters: dict, optional
+        a dictionary containing the parameters used in the projection functions.        
         
     Returns
     -------
@@ -78,7 +82,8 @@ def run_2D_projection(
     columns = ["filename_c1", "filename_c2", "filename_c3"]
     registered_df[columns] = registered_df.progress_apply(
         lambda row: project_and_save_image_stack(
-            row["image file name"], registered_folder, destination_folder, mask, shape_ref, crop_x, crop_y),
+            row["image file name"], registered_folder, destination_folder, mask,
+            shape_ref, projection_parameters, crop_x, crop_y),
         axis=1)
 
     registered_df["folder"] = destination_folder
@@ -92,8 +97,8 @@ def run_2D_projection(
     return
 
 
-def project_and_save_image_stack(image_file_name, input_folder, destination_folder, 
-                                 mask, shape_ref,  crop_x=None, crop_y=None):
+def project_and_save_image_stack(image_file_name, input_folder, destination_folder,
+                                 mask, shape_ref, projection_parameters, crop_x=None, crop_y=None):
     filename_c1 = os.path.join(
         input_folder, 'Registered_C1-'+image_file_name)
     filename_c2 = os.path.join(
@@ -116,11 +121,11 @@ def project_and_save_image_stack(image_file_name, input_folder, destination_fold
     source_c3 = source_c3*mask
 
     projected_image_c1 = spline_sinusoid_projection_concave_surface(
-        source_c2, source_c1, shape_ref)
+        source_c2, source_c1, shape_ref, **projection_parameters)
     projected_image_c2 = spline_sinusoid_projection_concave_surface(
-        source_c2, source_c2, shape_ref)
+        source_c2, source_c2, shape_ref, **projection_parameters)
     projected_image_c3 = spline_sinusoid_projection_concave_surface(
-        source_c2, source_c3, shape_ref)
+        source_c2, source_c3, shape_ref, **projection_parameters)
 
     # cropping the projected images around the center:
     if crop_x and crop_y:
@@ -208,12 +213,13 @@ def moving_average(array, window_size=3):
 
     """
     convolved = convolve1d(array, np.ones(window_size), mode='constant')
-    normalization = convolve1d(np.ones(len(array)), np.ones(window_size), mode='constant')
+    normalization = convolve1d(
+        np.ones(len(array)), np.ones(window_size), mode='constant')
     averaged = convolved/normalization
     return averaged
 
 
-def fit_spline_onto_convex_profile(image, ref_mask, y_min_cutoff=20, smoothing_n=7):
+def fit_spline_onto_convex_profile(image, ref_mask, y_min_cutoff=0, smoothing_n=7):
     """
     This function takes an image containing a bright convex curve and a binary mask
     representing prior information about the curve. The function calculates a spline
@@ -227,7 +233,7 @@ def fit_spline_onto_convex_profile(image, ref_mask, y_min_cutoff=20, smoothing_n
     ref_mask  : 2-dim numpy array
     y_min_cutoff: int, optional
         cutoff position of the curve in the image in the y direction.
-        The default is 20.
+        The default is 0.
     smoothing_n: int, optional
         Size of the moving average window applied to the curve.
         The default is 7.
@@ -276,8 +282,8 @@ def fit_spline_onto_convex_profile(image, ref_mask, y_min_cutoff=20, smoothing_n
         x_o = np.insert(x_o, 0, x_o[0])
         x_o = np.append(x_o, x_o[-1])
 
-    x_i = moving_average(x_o, window_size = smoothing_n)
-    y_i = moving_average(y_o, window_size = smoothing_n)
+    x_i = moving_average(x_o, window_size=smoothing_n)
+    y_i = moving_average(y_o, window_size=smoothing_n)
 
     y_i[0] = y_min_cutoff
     y_i[-1] = y_min_cutoff
@@ -388,7 +394,9 @@ def brightness_along_curve_perp_max_min(image, x, y, radius=1):
     return profile
 
 
-def spline_sinusoid_projection_concave_surface(image_stack_ref, image_stack_signal, image_stack_mask, min_y=0, meridian_plane_x=180):
+def spline_sinusoid_projection_concave_surface(image_stack_ref, image_stack_signal,
+                                               image_stack_mask, min_y=0, meridian_plane_x=180,
+                                               spline_smoothing=10, projection_radius=8):
     """
     This function computes a 2D projection of a 3D image stack with two separate
     channels, using one as a reference to define the surface while using the
@@ -411,12 +419,19 @@ def spline_sinusoid_projection_concave_surface(image_stack_ref, image_stack_sign
     image_stack_ref : 2-dim numpy array
     image_stack_signal : 2-dim numpy array
     image_stack_mask : 2-dim numpy array
-    min_y : integer, optional
+    min_y : int, optional
         Minimium distance of the surface from the beginning of the image stack
         The defaults is 0.
-    meridian_plane_x : integer, optional
+    meridian_plane_x : int, optional
         Position of the meridian plane used for the projection.
         The defaults is 180.
+    spline_smoothing = int, optional
+        size of the smoothing window applied after spline fitting.
+        The defaults is 10.
+    projection_radius = int, optional
+        defines the maximum distance from the spline curve to consider when looking
+        for the maximum brighthness in the perpendicular direction from the spline.
+        The default is 8.
 
     Returns
     -------
@@ -430,7 +445,7 @@ def spline_sinusoid_projection_concave_surface(image_stack_ref, image_stack_sign
         image_slice = image_stack_ref[:, :, layer]
         mask_slice = image_stack_mask[:, :, layer]
         profile = fit_spline_onto_convex_profile(
-            image_slice, mask_slice, min_y, smoothing_n=10)
+            image_slice, mask_slice, min_y, smoothing_n=spline_smoothing)
 
         if profile is not None:
             profile_x, profile_y = profile
@@ -438,7 +453,7 @@ def spline_sinusoid_projection_concave_surface(image_stack_ref, image_stack_sign
             continue
 
         projected_section = brightness_along_curve_perp_max_min(
-            image_stack_signal[:, :, layer], profile_x, profile_y, radius=8)
+            image_stack_signal[:, :, layer], profile_x, profile_y, radius=projection_radius)
 
         # find center:
         profile_center = np.argmin(np.absolute(profile_x-meridian_plane_x))
