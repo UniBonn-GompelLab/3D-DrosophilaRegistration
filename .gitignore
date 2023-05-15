@@ -1,0 +1,11 @@
+# Byte-compiled / optimized Python files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ignore system-specific files
+.DS_Store
+Thumbs.db
+
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*

@@ -697,7 +697,7 @@ def create_registration_window(shared, df_landmarks, df_model, df_files):
 
             dialog_box.update(value='\n - All of the images have been registered')
             df_info = df_info.reset_index(drop=True)
-            df_info.to_csv(os.path.join(values['-REGISTERED-IMAGES-FOLDER-'],'dataframe_info.csv'))
+            df_info.to_csv(os.path.join(values['-REGISTERED-IMAGES-FOLDER-'],'dataframe_info.csv'), index=False)
             
         if event == "Exit" or event == sg.WIN_CLOSED:
             registration_window.close()

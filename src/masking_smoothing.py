@@ -104,7 +104,8 @@ def run_smoothing_masking(
         axis=1)
 
     df_warped['folder'] = str(os.path.join(destination_folder, ''))
-    df_warped.to_csv(os.path.join(destination_folder, 'DatasetInfo.csv'))
+    df_warped.drop(columns=['full path'], inplace = True)
+    df_warped.to_csv(os.path.join(destination_folder, 'DatasetInfo.csv'),  index=False)
 
     # save common masks and background images for documentation:
     for channel in df_warped["channel"].unique():

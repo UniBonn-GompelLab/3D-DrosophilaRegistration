@@ -88,7 +88,7 @@ def run_2D_projection(
 
     registered_df["folder"] = destination_folder
     registered_df.to_excel(os.path.join(
-        destination_folder, 'DatasetInformation.xlsx'))
+        destination_folder, 'DatasetInformation.xlsx'), index=False)
 
     # Moving the images of channel 1 in the folder for landmarks annotation
     for file in glob.glob(os.path.join(destination_folder, 'Projected_C1*.tif')):
