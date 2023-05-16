@@ -29,7 +29,7 @@ Initially developed for the registration of confocal microscopy images of drosop
 
 ## Installation
 
-To install the project simply clone the repository:
+To install the project clone the repository:
 
 ```bash
 git clone https://github.com/LMU-AgGompel/3D-DrosophilaRegistration.git
@@ -74,7 +74,7 @@ The registration pipeline consists of the following steps:
 
 3. **Projection:**  <img src="doc/figures/projection.png" width="180" align="right"/> The surface of the registered objects is automatically projected into 2D images using a modified sinusoidal projection. The object is processed in slices, for each slice the profile of the bright object is interpolated with a spline curve and the image brightness is read out along the curve, taking the local maxima along the local normal direction. The 1D brightness profile obtained from each image slice forms one row of the 2D projected image. The various profiles obtained slicing the stack are aligned to each other at a predefined meridian plane.
 
-4. **Labeling and Elastic Warping:** <img src="doc/figures/landmarks.png" width="140" align="right"/> A graphical interface allows manual labeling and registration of bidimensional images. User-selected points are used to elastically warp the images onto a reference model using thin-plate spline registration.
+4. **Labeling and Elastic Warping:** <img src="doc/figures/landmarks.png" width="140" align="right"/> A graphical interface built with the PYSimpleGUI library allows manual labeling and registration of bidimensional images. User-selected points are used to elastically warp the images onto a reference model using thin-plate spline registration.
 
 ## License
 This project is licensed under the terms of the MIT license.
