@@ -4,18 +4,20 @@
 
 ## A 3D fluorescence microscopy registration pipeline
 
-This project offers a set of tools to register multi-channel 3-dimensional images, segment an object in the image stack, and produce a two-dimensional image of its surface. It is tailored to the registration of confocal microscopy images of drosophila and was developed to extract and analyze gene expression patterns in the epithelial cells of the drosophila abdomen. However, it can be adapted for different types of 3D imaging data. Currently, the project supports images with 3 color channels.
+This project offers a set of tools to register multi-channel 3-dimensional images, segment an object in the image stack, and produce a two-dimensional image of its surface. It is tailored to the registration of confocal microscopy images of drosophila and was developed to register and analyze gene expression patterns in the epithelial cells of the drosophila abdomen. However, it can be adapted for different types of 3D imaging data. Currently, the project supports images with 3 color channels.
 
 ## Table of Contents
 - [Introduction](#introduction)
 - [Features](#features)
 - [Installation](#installation)
 - [Usage](#usage)
+- [Detailed description of the registration pipeline](#details)
 - [License](#license)
 
 ## Introduction
 
-The project provides a comprehensive set of tools designed for registering multi-channel 3-dimensional images, segmenting an object within those images, register it to a reference image, and generating two-dimensional images of the surface of the segmented object. Initially developed for the registration of confocal microscopy images of drosophila, it could be adapted for other types of 3D imaging data.
+The project provides a comprehensive set of tools designed for registering multi-channel 3-dimensional images, segmenting an object within each image, register it to a reference shape, and generating a two-dimensional image of the surface of the segmented object. 
+Initially developed for the registration of confocal microscopy images of drosophila, it could be adapted for other types of 3D imaging data.
 
 ## Features
 
@@ -41,7 +43,7 @@ Make sure you have the following dependencies installed:
 
 ## Usage
 
-
+## Detailed description of the registration pipeline
 
 ## License
 This project is licensed under the terms of the MIT license.
