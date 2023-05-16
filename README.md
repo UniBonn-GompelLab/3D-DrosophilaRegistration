@@ -1,6 +1,6 @@
 <img src="doc/figures/logo.png" width="200" align="right"/>
 
-#3D-DrosophilaRegistration
+# 3D-DrosophilaRegistration
 
 ## A 3D fluorescence microscopy registration pipeline
 
