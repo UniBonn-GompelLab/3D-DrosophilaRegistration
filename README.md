@@ -1,4 +1,8 @@
-# A 3D fluorescence microscopy registration pipeline
+<img src="doc/figures/logo.png" width="200" align="right"/>
+
+#3D-DrosophilaRegistration
+
+## A 3D fluorescence microscopy registration pipeline
 
 This project offers a set of tools to register multi-channel 3-dimensional images, segment an object in the image stack, and produce a two-dimensional image of its surface. It is tailored to the registration of confocal microscopy images of drosophila and was developed to extract and analyze gene expression patterns in the epithelial cells of the drosophila abdomen. However, it can be adapted for different types of 3D imaging data. Currently, the project supports images with 3 color channels.
 
