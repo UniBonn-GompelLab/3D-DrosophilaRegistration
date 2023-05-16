@@ -68,11 +68,12 @@ The registration pipeline consists of the following steps:
 
 1. **Preprocessing:** Automated segmentation is performed on the image stack using an automatically determined threshold such that the segmented volume covers a fraction of the entire image volume that falls in a specified range. The segmented object is cleaned up using morphological transformations and mesh fitting to fill holes.
 
-2. **Registration:** The segmented volume is rendered in an interactive interface where corresponding points on the source and reference objects are selected. The image stack is then rigidly rotated and rescaled to minimize distances between the selected points.
+2. **Registration:** <img src="doc/figures/3d_segmentation.png" width="200" align="right"/> The segmented volume is rendered in an interactive interface where corresponding points on the source and reference objects are selected. The image stack is then rigidly rotated and rescaled to minimize distances between the selected points.
 
-3. **Projection:** The surface of the registered objects is automatically projected into 2D images using a modified sinusoidal projection. The object is processed in slices, for each slice the profile of the bright object is interpolated with a spline curve and the image brightness is read out along the curve, taking the local maxima along the local normal direction. The 1D brightness profile obtained from each image slice forms one row of the 2D projected image. The various profiles obtained slicing the stack are aligned to each other at a predefined meridian plane.
 
-4. **Labeling and Elastic Warping:** A graphical interface allows manual labeling and registration of bidimensional images. User-selected points are used to elastically warp the images onto a reference model using thin-plate spline registration.
+3. **Projection:** <img src="doc/figures/3d_registration.png" width="200" align="right"/> The surface of the registered objects is automatically projected into 2D images using a modified sinusoidal projection. The object is processed in slices, for each slice the profile of the bright object is interpolated with a spline curve and the image brightness is read out along the curve, taking the local maxima along the local normal direction. The 1D brightness profile obtained from each image slice forms one row of the 2D projected image. The various profiles obtained slicing the stack are aligned to each other at a predefined meridian plane.
+
+4. **Labeling and Elastic Warping:** <img src="doc/figures/landmarks.png" width="200" align="right"/> A graphical interface allows manual labeling and registration of bidimensional images. User-selected points are used to elastically warp the images onto a reference model using thin-plate spline registration.
 
 ## License
 This project is licensed under the terms of the MIT license.
