@@ -41,23 +41,23 @@ def preprocess_and_segment_images(
     bit_depth: int, optional
         bit depth of raw data
     only_on_new_files: bool, optional
-        whether to reanalyze the whole dataset or only new images. 
+        whether to reanalyze the whole dataset or only new images.
         The default is True
     segmentation_parameters: dict, optional
         dictionary specifing the values of the parameters used for segmentation.
     database_filename : str, optional
-        name of the excel file(s) included with the raw data. 
+        name of the excel file(s) included with the raw data.
         The default is 'DatasetInformation.xlsx'.
 
     Returns
     -------
     None.
-    
+
     The function collects raw images across all subfolders in the provided folder.
     It removes duplicated images, downscale and pad the images, run a segmentation
-    algorithm that selects only the surface of the fly in the original z-stack and 
+    algorithm that selects only the surface of the fly in the original z-stack and
     save the final 3d stacks in the destination folder.
-    
+
     NOTE: Channel 1 is used as a reference for segmentation. The preprocessed
     images are rescaled to 16 bits.
 
@@ -74,7 +74,7 @@ def preprocess_and_segment_images(
         return
 
     # In case we want to reanalyze the entire dataset clean the destination directory:
-    if only_on_new_files == False:
+    if not only_on_new_files:
         for file in os.listdir(destination_folder):
             os.remove(os.path.join(destination_folder, file))
 
@@ -93,7 +93,11 @@ def preprocess_and_segment_images(
     print("Preprocessing of raw images in progress:")
     new_columns = ["experiment", "filename_c1", "filename_c2", "filename_c3"]
     raw_data_df[new_columns] = raw_data_df.progress_apply(lambda row:
-                                                          preprocess_and_save(row["image file name"], row["folder"], downscaling, bit_depth, destination_folder, preproc_df, segmentation_parameters), axis=1)
+                            preprocess_and_save(
+                                row["image file name"], row["folder"],
+                                downscaling, bit_depth, destination_folder,
+                                preproc_df, segmentation_parameters)
+                            , axis=1)
 
     # remove rows with NaNs and save the dataframe as an excel file
     raw_data_df = raw_data_df[raw_data_df['experiment'].notna()]
@@ -110,13 +114,13 @@ def create_raw_images_database(raw_data_folder, database_filename='DatasetInform
     raw_data_folder : str
         path of the folder containing the raw data.
     database_filename : str, optional
-        name of the excel file(s) included with the raw data. 
+        name of the excel file(s) included with the raw data.
         The default is 'DatasetInformation.xlsx'.
 
     Returns
     -------
     raw_data_df : pandas dataframe
-        dataframe containing the filenames of all the input raw images in all 
+        dataframe containing the filenames of all the input raw images in all
         subfolders, after removing duplicated files.
 
     """
@@ -142,13 +146,13 @@ def create_raw_images_database(raw_data_folder, database_filename='DatasetInform
 
 def preprocess_and_save(image_file_name, folder, downscaling, bit_depth, destination_folder, preproc_df, segm_pars):
     """
-    This function downscale and pad the three channels of one image stack, 
-    runs a segmentation algorithm on the first channel to selects only the 
+    This function downscale and pad the three channels of one image stack,
+    runs a segmentation algorithm on the first channel to selects only the
     surface of the fly save the final 3D stacks in the destination folder.
-    
+
     NOTE: Channel 1 is used as a reference for segmentation. The preprocessed
     images are rescaled to 16 bits.
-    
+
     Parameters
     ----------
     image_file_name : str
@@ -162,7 +166,7 @@ def preprocess_and_save(image_file_name, folder, downscaling, bit_depth, destina
     destination_folder : str
         path of the folder where preprocessed images will be saved.
     preproc_df : pandas dataframe
-        dataframe containing the filename of the preprocessed images, used to 
+        dataframe containing the filename of the preprocessed images, used to
         check if an image should be skipped in the preprocessing.
 
     Returns
@@ -281,13 +285,13 @@ def segmentation_with_optimized_thresh(image, threshold=1.05, max_iter=200, frac
     """
     Iteratively look for a global threshold that results in a segmented volume
     covering a given fraction of the volume of an ndimensional numpy array.
-    
+
     Parameters
     ----------
     image : numpy array
         image to segment.
     threshold : float, optional
-        starting value for thresholding, as a fraction of the average value of 
+        starting value for thresholding, as a fraction of the average value of
         the array. The default is 1.05.
     max_iter : int, optional
         Dmaximum number of iterations. The default is 200.
@@ -329,7 +333,7 @@ def segmentation_with_optimized_thresh(image, threshold=1.05, max_iter=200, frac
 def image_padding(image, padding=20, cval=0):
     """
     Padding of a 3D image with a constant value
-    
+
     Parameters
     ----------
     image : 3D numpy array
@@ -337,7 +341,7 @@ def image_padding(image, padding=20, cval=0):
     padding : int, optional
         extent of the padding. The default is 20.
     cval: int, optional
-        constant value used for padding the image. The default is 0. 
+        constant value used for padding the image. The default is 0.
 
     Returns
     -------
@@ -353,8 +357,8 @@ def image_padding(image, padding=20, cval=0):
 
 def clean_up_segmented_image(binary_image, image, closing_r=4, dilation_r=8, mesh_radius=30):
     """
-    This function refines the segmentation of a surface in a 3D image using 
-    morphological transformations (closing & dilation), selecting local maxima 
+    This function refines the segmentation of a surface in a 3D image using
+    morphological transformations (closing & dilation), selecting local maxima
     along the z direction, and fitting a mesh through the maxima to fill holes.
 
     Parameters
@@ -366,7 +370,7 @@ def clean_up_segmented_image(binary_image, image, closing_r=4, dilation_r=8, mes
     closing_r : int, optional
         closing radius. The default is 4.
     dilation_r : int, optional
-        final dilation radius, which fixes the thickness of the segmented surface. 
+        final dilation radius, which fixes the thickness of the segmented surface.
         The default is 5.
 
     Returns
@@ -376,64 +380,111 @@ def clean_up_segmented_image(binary_image, image, closing_r=4, dilation_r=8, mes
 
     """
 
-    filled = morphology.closing(binary_image, morphology.ball(closing_r))
+    refined_binary_image = refine_surface_mask(binary_image, image, closing_r, surface_spacing_threshold = mesh_radius)
 
-    label_image = label(filled)
-    rp = regionprops(label_image)
-    size = max([i.area for i in rp])
+    surface_pcd, surface_pcd_values, _, _ = refine_surface_mask_with_mesh_interpolation(refined_binary_image, mesh_radius)
 
-    biggest_objects_mask = morphology.remove_small_objects(
-        label_image, min_size=size/100) > 0
+    final_image = pcd_to_image(surface_pcd, surface_pcd_values, binary_image.shape)
 
-    # Create a max that selects the local maxima along the z direction:
-    thresholded_image = local_maxima_z(
-        biggest_objects_mask * image, mesh_radius)
-
-    # To fill potential holes in the segmented object we create a point cloud object
-    # from the mask, and fit a mesh on the points.
-
-    pcd, _ = image_to_pcd(thresholded_image)
-
-    # Remove isolated points from the points cloud, based on the number of
-    # neighbours within a given radius:
-
-    uni_down_pcd = pcd.uniform_down_sample(every_k_points=3)
-    cleaned_pcd = uni_down_pcd
-
-    # Downsampling the point cloud to make the sampling more uniform:
-    cleaned_pcd = cleaned_pcd.voxel_down_sample(voxel_size=5)
-
-    # Create a mesh that fits through the cleaned points to fill potential holes:
-    cleaned_pcd.estimate_normals()
-    cleaned_pcd.orient_normals_consistent_tangent_plane(k=30)
-    normals = -np.asarray(cleaned_pcd.normals)
-    cleaned_pcd.normals = o3d.utility.Vector3dVector(normals)
-    ball_mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(
-        cleaned_pcd, o3d.utility.DoubleVector([mesh_radius]))
-    bbox = cleaned_pcd.get_axis_aligned_bounding_box()
-    ball_mesh_crop = ball_mesh.crop(bbox)
-
-    # Resample the mesh and create the final point cloud:
-    resampled_pcd = ball_mesh_crop.sample_points_uniformly(
-        number_of_points=50000)
-    final_pcd = o3d.geometry.PointCloud()
-
-    final_pcd.points = o3d.utility.Vector3dVector(
-        np.concatenate((pcd.points, resampled_pcd.points), axis=0))
-    final_pcd_values = np.ones(np.asarray(final_pcd.points).shape[0])
-
-    # Convert the point cloud into a binary image and apply a dilation:
-    final_image = pcd_to_image(final_pcd, final_pcd_values, binary_image.shape)
     final_image = morphology.dilation(final_image, morphology.ball(dilation_r))
 
     return final_image
 
+def refine_surface_mask(binary_image, image, closing_r=4, surface_spacing_threshold=10):
+    """
+    Refines a binary surface mask by applying morphological operations and selecting local maxima
+    along the z direction.
+
+    Parameters
+    ----------
+    binary_image : 3D numpy array
+        Preliminary segmentation of the image.
+    image : 3D numpy array
+        Original image.
+    closing_r : int, optional
+        Closing radius used to close small holes. Default is 4.
+    surface_spacing_threshold : int, optional
+        Threshold to reject local maxima that are too close along the axis. Default is 10.
+
+    Returns
+    -------
+    refined_binary_image : 3D numpy array
+        Refined binary mask of the segmented surface.
+
+    """
+    # Apply closing operation to close small holes:
+    filled_binary_image = morphology.closing(binary_image, morphology.ball(closing_r))
+
+    # Remove small objects from the mask:
+    labelled_image = label(filled_binary_image)
+    regions_properties = regionprops(labelled_image)
+    max_object_size = max([region.area for region in regions_properties])
+    biggest_objects_mask = morphology.remove_small_objects(
+        labelled_image, min_size = max_object_size/100) > 0
+
+    # Refine the mask selecting the local maxima of the image along the z direction:
+    refined_binary_image = local_maxima_z(
+        biggest_objects_mask * image, surface_spacing_threshold)
+
+    return refined_binary_image
+
+def refine_surface_mask_with_mesh_interpolation(binary_image, mesh_radius):
+    """
+    Refines a surface mask by interpolating a mesh to fill potential holes.
+
+    Parameters
+    ----------
+    binary_image : ndarray
+        Binary mask of the segmented surface.
+    mesh_radius : float
+        Radius used for mesh interpolation.
+
+    Returns
+    -------
+    final_pcd : open3d.geometry.PointCloud
+        Final point cloud representing the refined surface mask.
+    final_pcd_values : ndarray
+        Values associated with the final point cloud.
+    original_pcd : open3d.geometry.PointCloud
+        Original point cloud obtained from the binary mask.
+    mesh : open3d.geometry.TriangleMesh
+        Mesh interpolated from the downsampled point cloud.
+
+    """
+
+    # Create a point cloud object from the binary mask
+    original_pcd, _ = image_to_pcd(binary_image)
+
+    # Downsampling the point cloud to make the sampling more uniform
+    downsampled_pcd = original_pcd.voxel_down_sample(voxel_size=4)
+
+    # Fit a mesh through the cleaned points to fill potential holes
+    downsampled_pcd.estimate_normals()
+    downsampled_pcd.orient_normals_consistent_tangent_plane(k=30)
+    downsampled_pcd.normals = o3d.utility.Vector3dVector(-np.asarray(downsampled_pcd.normals))
+    mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(
+           downsampled_pcd, o3d.utility.DoubleVector([mesh_radius]))
+    bbox = downsampled_pcd.get_axis_aligned_bounding_box()
+    mesh_crop = mesh.crop(bbox)
+
+    # Resample the mesh to obtain a point cloud
+    mesh_area = mesh.get_surface_area()
+    resampled_pcd = mesh_crop.sample_points_uniformly(number_of_points = int(2*mesh_area))
+
+    # Merge the original point cloud and the resampled point cloud obtained from the mesh
+    # to build the final point cloud representing the refined surface mask
+    final_pcd = o3d.geometry.PointCloud()
+    final_pcd.points = o3d.utility.Vector3dVector(
+        np.concatenate((original_pcd.points, resampled_pcd.points), axis=0))
+    final_pcd_values = np.ones(np.asarray(final_pcd.points).shape[0])
+
+    return final_pcd, final_pcd_values, original_pcd, mesh
 
 def local_maxima_z(image, min_dist):
     """
-    This function creates a mask of the image which selects the local maxima along 
+    This function creates a mask of the image which selects the local maxima along
     the z direction which are separated by a minimum distance.
-    
+
     Parameters
     ----------
     image : 3D numpy array
@@ -457,7 +508,6 @@ def local_maxima_z(image, min_dist):
                 mask_local_maxima_z[peak, i, j] = 1
 
     return mask_local_maxima_z
-
 
 if __name__ == '__main__':
 
