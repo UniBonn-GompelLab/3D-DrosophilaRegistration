@@ -302,7 +302,7 @@ def manual_registration(source, source_values, target, target_values):
     return transformation
 
 
-def pick_points(pcd):
+def pick_points(pcd, point_size = None, window_name = "pick points"):
     """
     This function visualizes a point cloud object in  a gui and allows the user
     to select a series of points on the object.
@@ -311,6 +311,8 @@ def pick_points(pcd):
     Parameters
     ----------
     pcd : point cloud object
+    point_size : int, size of the representation of a point
+    window_name : str, name of the window
 
     Returns
     -------
@@ -323,8 +325,11 @@ def pick_points(pcd):
     sys.stdout = StringIO()
     # Create Visualizer with editing:
     vis = o3d.visualization.VisualizerWithEditing()
-    vis.create_window()
+    vis.create_window(window_name = window_name)
     vis.add_geometry(pcd)
+    if point_size:
+        renderer_opts = vis.get_render_option()
+        renderer_opts.point_size = np.array(point_size)
     # user picks points
     result = vis.run()
     vis.destroy_window()
