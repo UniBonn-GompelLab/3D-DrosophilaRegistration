@@ -91,6 +91,9 @@ def run_2D_projection(
         destination_folder, 'DatasetInformation.xlsx'), index=False)
 
     # Moving the images of channel 1 in the folder for landmarks annotation
+    lmkFolderExist = os.path.exists(landmark_folder)
+    if not lmkFolderExist:
+        os.makedirs(landmark_folder)
     for file in glob.glob(os.path.join(destination_folder, 'Projected_C1*.tif')):
         shutil.copy(file,  landmark_folder)
 
@@ -131,14 +134,16 @@ def project_and_save_image_stack(image_file_name, input_folder, destination_fold
     if crop_x and crop_y:
         center_y = projected_image_c1.shape[0]/2
         center_x = projected_image_c1.shape[1]/2
-        start_y = int(center_y-crop_y/2)
-        start_x = int(center_x-crop_x/2)
-        projected_image_c1 = projected_image_c1[start_y:(
-            start_y+crop_y), start_x:(start_x+crop_x)]
-        projected_image_c2 = projected_image_c2[start_y:(
-            start_y+crop_y), start_x:(start_x+crop_x)]
-        projected_image_c3 = projected_image_c3[start_y:(
-            start_y+crop_y), start_x:(start_x+crop_x)]
+        start_y = np.max([int(center_y-crop_y/2),0])
+        start_x = np.max([int(center_x-crop_x/2),0])
+        end_y = np.min([start_y+crop_y, projected_image_c1.shape[0]])
+        end_x = np.min([start_x+crop_x, projected_image_c1.shape[1]])
+        projected_image_c1 = projected_image_c1[start_y:
+            end_y, start_x:end_x ]
+        projected_image_c2 = projected_image_c2[start_y:
+            end_y, start_x:end_x ]
+        projected_image_c3 = projected_image_c3[start_y:
+            end_y, start_x:end_x ]
 
     projected_image_c1 = projected_image_c1.astype(np.uint16)
     projected_image_c2 = projected_image_c2.astype(np.uint16)
@@ -469,10 +474,14 @@ if __name__ == '__main__':
     read_folder = "../test_dataset/03_registered"
     destination_folder = "../test_dataset/04_projected"
     landmark_folder = "../test_dataset/05_landmarks/data"
-    mask_file = "../test_dataset/References_and_masks/C1_Reference_iso_thick.tiff"
+    mask_file = "../test_dataset/References_and_masks/Reference_mask_iso_thick.tiff"
     shape_reference_file = "../test_dataset/References_and_masks/C1_Reference_iso.tiff"
 
     df_name = "DatasetInformation.xlsx"
     df = pd.read_excel(os.path.join(read_folder, df_name))
+    
+    params = {'min_y':0, 'meridian_plane_x':62,'spline_smoothing':5, 'projection_radius':5}
+
     run_2D_projection(df, read_folder, destination_folder,
-                      landmark_folder, mask_file, shape_reference_file)
+                      landmark_folder, mask_file, shape_reference_file,
+                      crop_x=150, crop_y = 150, projection_parameters = params)
