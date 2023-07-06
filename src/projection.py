@@ -25,6 +25,7 @@ from scipy.interpolate import make_interp_spline
 def run_2D_projection(
         registered_df, registered_folder, destination_folder, landmark_folder,
         ref_mask_filename, ref_shape_filename, crop_x=None, crop_y=None,
+        only_on_new_files = True, database_filename='DatasetInformation.xlsx',
         projection_parameters={'min_y': 0, 'meridian_plane_x': 180,
                                'spline_smoothing': 10, 'projection_radius': 8}):
     '''
@@ -68,10 +69,22 @@ def run_2D_projection(
     registered_folder = os.path.join(registered_folder, '')
 
     # clean the destination directory:
-    for file in os.listdir(destination_folder):
-        os.remove(os.path.join(destination_folder, file))
+    if not only_on_new_files:
+        for file in os.listdir(destination_folder):
+            os.remove(os.path.join(destination_folder, file))
+            
+    # Look for the database file of the preprocessed images to check which
+    # images have been already processed:
+    try:
+        projected_df = pd.read_excel(os.path.join(
+            destination_folder, database_filename))
+        
+    # if the file doesn't exist create an empty dataframe
+    except FileNotFoundError:
+        projected_df = pd.DataFrame(
+            columns=["experiment", "filename_c1", "filename_c2", "filename_c3"])
 
-    # open the mask file and the reference shape file and normalize them:
+    # open the mask file and the reference-shape file and normalize them:
     mask = io.imread(ref_mask_filename)
     mask = mask / np.max(mask)
     shape_ref = io.imread(ref_shape_filename)
@@ -82,13 +95,13 @@ def run_2D_projection(
     columns = ["filename_c1", "filename_c2", "filename_c3"]
     registered_df[columns] = registered_df.progress_apply(
         lambda row: project_and_save_image_stack(
-            row["image file name"], registered_folder, destination_folder, mask,
+            row["image file name"], projected_df, registered_folder, destination_folder, mask,
             shape_ref, projection_parameters, crop_x, crop_y),
         axis=1)
 
     registered_df["folder"] = destination_folder
     registered_df.to_excel(os.path.join(
-        destination_folder, 'DatasetInformation.xlsx'), index=False)
+        destination_folder, database_filename), index=False)
 
     # Moving the images of channel 1 in the folder for landmarks annotation
     lmkFolderExist = os.path.exists(landmark_folder)
@@ -100,8 +113,12 @@ def run_2D_projection(
     return
 
 
-def project_and_save_image_stack(image_file_name, input_folder, destination_folder,
+def project_and_save_image_stack(image_file_name, projected_df, input_folder, destination_folder,
                                  mask, shape_ref, projection_parameters, crop_x=None, crop_y=None):
+    
+    if os.path.splitext(image_file_name)[0] in projected_df['experiment'].values:
+        return pd.Series(['Projected_C1-'+image_file_name, 'Projected_C2-'+image_file_name, 'Projected_C3-'+image_file_name])
+
     filename_c1 = os.path.join(
         input_folder, 'Registered_C1-'+image_file_name)
     filename_c2 = os.path.join(
@@ -484,4 +501,5 @@ if __name__ == '__main__':
 
     run_2D_projection(df, read_folder, destination_folder,
                       landmark_folder, mask_file, shape_reference_file,
-                      crop_x=150, crop_y = 150, projection_parameters = params)
+                      crop_x=150, crop_y = 150, only_on_new_files = True, 
+                      projection_parameters = params)
