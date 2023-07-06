@@ -1,0 +1,10 @@
+file name,channel,image quality,notes,folder,original file name,type
+Projected_C2-Image3.tif,C2,undefined,none,../test_dataset/07_masked_and_smooth/,Image3.tif,C
+Projected_C3-Image3.tif,C3,undefined,none,../test_dataset/07_masked_and_smooth/,Image3.tif,C
+Projected_C1-Image3.tif,registration,undefined,none,../test_dataset/07_masked_and_smooth/,Image3.tif,C
+Projected_C2-Image2.tif,C2,undefined,none,../test_dataset/07_masked_and_smooth/,Image2.tif,B
+Projected_C3-Image2.tif,C3,undefined,none,../test_dataset/07_masked_and_smooth/,Image2.tif,B
+Projected_C1-Image2.tif,registration,undefined,none,../test_dataset/07_masked_and_smooth/,Image2.tif,B
+Projected_C2-Image1.tif,C2,undefined,none,../test_dataset/07_masked_and_smooth/,Image1.tif,A
+Projected_C3-Image1.tif,C3,undefined,none,../test_dataset/07_masked_and_smooth/,Image1.tif,A
+Projected_C1-Image1.tif,registration,undefined,none,../test_dataset/07_masked_and_smooth/,Image1.tif,A
