@@ -29,7 +29,7 @@ def run_2D_projection(
                                'spline_smoothing': 10, 'projection_radius': 8}):
     '''
     This function loops through all the registered images, calculate the 2D projection,
-    crops the final images, saves them in the destination folder and updates or 
+    crops the final images, saves them in the destination folder and updates or
     creates the excel file with the information about each image.
 
     Parameters
@@ -48,7 +48,7 @@ def run_2D_projection(
     ref_shape_filename : str
         path to the 3D binary shape prior to use in the projection.
     crop_x : int, optional
-        if not None, crop the final image to crop_x size along the x axis. 
+        if not None, crop the final image to crop_x size along the x axis.
         The image is cropped around its center.
         The default is None.
     crop_y : int, optional
@@ -56,8 +56,8 @@ def run_2D_projection(
         The image is cropped around its center.
         The default is None.
     projection_parameters: dict, optional
-        a dictionary containing the parameters used in the projection functions.        
-        
+        a dictionary containing the parameters used in the projection functions.    
+
     Returns
     -------
     None.
@@ -115,7 +115,7 @@ def project_and_save_image_stack(image_file_name, input_folder, destination_fold
         print("File not found: " + image_file_name)
         return pd.Series(["", "", ""])
 
-    # Apply mask to select only the fly abdomen:
+    # Apply mask:
     source_c1 = source_c1*mask
     source_c2 = source_c2*mask
     source_c3 = source_c3*mask
@@ -460,19 +460,19 @@ def spline_sinusoid_projection_concave_surface(image_stack_ref, image_stack_sign
         projection_min = round(projected.shape[1]/2)-profile_center
         projection_max = projection_min+len(projected_section)
         projected[-layer, projection_min:projection_max] = projected_section
-
+        
     return projected
 
 
 if __name__ == '__main__':
 
-    read_folder = "../../data/03_registered"
-    destination_folder = "../../data/04_projected"
-    landmark_folder = "../../data/05_landmarks/data"
-    abdomen_mask_file = "../../data/References_and_masks/Reference_abdomen_mask_iso_thick.tif"
-    abdomen_shape_reference_file = "../../data/References_and_masks/Reference_abdomen_mask_iso.tif"
+    read_folder = "../test_dataset/03_registered"
+    destination_folder = "../test_dataset/04_projected"
+    landmark_folder = "../test_dataset/05_landmarks/data"
+    mask_file = "../test_dataset/References_and_masks/C1_Reference_iso_thick.tiff"
+    shape_reference_file = "../test_dataset/References_and_masks/C1_Reference_iso.tiff"
 
     df_name = "DatasetInformation.xlsx"
     df = pd.read_excel(os.path.join(read_folder, df_name))
     run_2D_projection(df, read_folder, destination_folder,
-                      landmark_folder, abdomen_mask_file, abdomen_shape_reference_file)
+                      landmark_folder, mask_file, shape_reference_file)
