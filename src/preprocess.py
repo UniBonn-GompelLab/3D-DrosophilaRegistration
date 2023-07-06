@@ -232,6 +232,10 @@ def preprocess_and_save(image_file_name, folder, downscaling, bit_depth, destina
     segmented_image_c1 = image_c1_downscaled*thresholded
     segmented_image_c2 = image_c2_downscaled*thresholded
     segmented_image_c3 = image_c3_downscaled*thresholded
+    
+    segmented_image_c1 = segmented_image_c1.astype(np.uint16)
+    segmented_image_c2 = segmented_image_c2.astype(np.uint16)
+    segmented_image_c3 = segmented_image_c3.astype(np.uint16)
 
     # Save the segmented images:
     image_file_names = [os.path.basename(filename_c1), os.path.basename(
@@ -512,7 +516,7 @@ def local_maxima_z(image, min_dist):
 if __name__ == '__main__':
 
     ## %matplotlib qt  ##
-    read_data_folder = "../../data/01_raw"
-    destination_folder = "../../data/02_preprocessed"
+    read_data_folder = "../test_dataset/01_raw"
+    destination_folder = "../test_dataset/02_preprocessed"
     preprocess_and_segment_images(
         read_data_folder, destination_folder, downscaling=[1, 2.5, 2.5], bit_depth=12)
