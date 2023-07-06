@@ -160,6 +160,12 @@ def register_and_save_image_stack(image_file_name, input_folder, reference_image
     # Open the interface for manual registration:
     transformation = manual_registration(
         pcd_src_c1, src_values_c1, pcd_target, target_values)
+    
+    # Create point clouds with higher sampling for rotation:
+    pcd_src_c1, src_values_c1 = image_to_pcd(image_src_c1, upscale = 2)
+    pcd_src_c2, src_values_c2 = image_to_pcd(image_src_c2, upscale = 2)
+    pcd_src_c3, src_values_c3 = image_to_pcd(image_src_c3, upscale = 2)
+    pcd_target, target_values = image_to_pcd(reference_image, upscale = 2)
 
     # Apply the transformation on all channels:
     pcd_src_c1.transform(transformation)
@@ -181,6 +187,10 @@ def register_and_save_image_stack(image_file_name, input_folder, reference_image
     filename_c1 = 'C1-'+image_file_name
     filename_c2 = 'C2-'+image_file_name
     filename_c3 = 'C3-'+image_file_name
+
+    registered_source_image_c1 = registered_source_image_c1.astype(np.uint16)
+    registered_source_image_c2 = registered_source_image_c2.astype(np.uint16)
+    registered_source_image_c3 = registered_source_image_c3.astype(np.uint16)
 
     image_file_names = [filename_c1, filename_c2, filename_c3]
     registered_images = [registered_source_image_c1,
@@ -273,11 +283,11 @@ def manual_registration(source, source_values, target, target_values):
     source_temp = copy.deepcopy(source)
     target_temp = copy.deepcopy(target)
 
-    bw_colors = 10*(source_values-np.min(source_values))/np.max(source_values)
+    bw_colors = 10*(source_values-np.min(source_values))/(np.max(source_values)-np.min(source_values))
     source_temp.colors = o3d.utility.Vector3dVector(
         np.asarray([bw_colors, bw_colors, bw_colors]).T)
 
-    bw_colors = 10*(target_values-np.min(target_values))/np.max(target_values)
+    bw_colors = 10*(target_values-np.min(target_values))/(np.max(target_values)-np.min(target_values))
     target_temp.colors = o3d.utility.Vector3dVector(
         np.asarray([bw_colors, bw_colors, bw_colors]).T)
 
@@ -378,10 +388,10 @@ def refine_registration_point_to_plane(source, target, threshold, downsampling_r
 
 if __name__ == '__main__':
 
-    read_folder = "../../data/02_preprocessed"
-    destination_folder = "../../data/03_registered"
+    read_folder = "../test_dataset/02_preprocessed"
+    destination_folder = "../test_dataset/03_registered"
 
-    reference_fly_filename = "../../data/References_and_masks/C1_Reference_iso.tif"
+    reference_fly_filename = "../test_dataset/References_and_masks/C1_Reference_iso.tiff"
 
     df_name = "DatasetInformation.xlsx"
 
