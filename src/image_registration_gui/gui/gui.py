@@ -293,7 +293,7 @@ def start_image_registration_GUI(main_window_size = (1200,1100), graph_canvas_wi
                 # landmarks, we update the current landmark and show it as a dot on the
                 # reference image.
                 shared['curr_landmark'] = event
-                print(event)
+                
                 # update colors of landmark buttons:
                 landmarks_window[shared['curr_landmark']].update(button_color = ("black", "red"))
 
