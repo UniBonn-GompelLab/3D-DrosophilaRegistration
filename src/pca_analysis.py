@@ -373,13 +373,13 @@ def plot_PCA_2D(df_images, data_eigenvectors, comp1, comp2, hue='type',
 
     eigen0 = coo_matrix((data_eigenvectors["Eigenvector_0"], (
         data_eigenvectors["x"], data_eigenvectors["y"]))).toarray()
-    eigen1 = coo_matrix((data_eigenvectors["Eigenvector_"+str(comp1)], (
+    eigen1 = coo_matrix((data_eigenvectors["Eigenvector_"+str(comp1+1)], (
         data_eigenvectors["x"], data_eigenvectors["y"]))).toarray()
-    eigen2 = coo_matrix((data_eigenvectors["Eigenvector_"+str(comp2)], (
+    eigen2 = coo_matrix((data_eigenvectors["Eigenvector_"+str(comp2+1)], (
         data_eigenvectors["x"], data_eigenvectors["y"]))).toarray()
 
-    expl_var1 = data_eigenvectors["ExplVar_"+str(comp1)]
-    expl_var2 = data_eigenvectors["ExplVar_"+str(comp2)]
+    expl_var1 = data_eigenvectors["ExplVar_"+str(comp1+1)]
+    expl_var2 = data_eigenvectors["ExplVar_"+str(comp2+1)]
 
     sns.scatterplot(data=df_PCA, x='PCA_a', y='PCA_b',  hue=hue, ax=f_ax1)
 
@@ -495,13 +495,13 @@ def change_basis_and_plot_PCA_2D(df_images, data_eigenvectors, comp1, comp2, hue
         df_PCA.loc[i, 'PCA_a'] = x
         df_PCA.loc[i, 'PCA_b'] = y
 
-    eigen1 = coo_matrix((data_eigenvectors["Eigenvector_"+str(comp1)], (
+    eigen1 = coo_matrix((data_eigenvectors["Eigenvector_"+str(comp1+1)], (
         data_eigenvectors["x"], data_eigenvectors["y"]))).toarray()
-    eigen2 = coo_matrix((data_eigenvectors["Eigenvector_"+str(comp2)], (
+    eigen2 = coo_matrix((data_eigenvectors["Eigenvector_"+str(comp2+1)], (
         data_eigenvectors["x"], data_eigenvectors["y"]))).toarray()
 
-    expl_var1 = data_eigenvectors["ExplVar_"+str(comp1)]
-    expl_var2 = data_eigenvectors["ExplVar_"+str(comp2)]
+    expl_var1 = data_eigenvectors["ExplVar_"+str(comp1+1)]
+    expl_var2 = data_eigenvectors["ExplVar_"+str(comp2+1)]
 
     sns.scatterplot(data=df_PCA, x='PCA_a', y='PCA_b',  hue=hue, ax=f_ax1)
 
