@@ -149,8 +149,9 @@ def reshape_averages_for_PCA(df_images, mask_filename, column_for_grouping="type
     df_averages : dataframe
 
     """
-
     mask = np.asarray(Image.open(mask_filename))
+    mask = mask/np.max(mask)
+    
     df_images['file name'] = df_images['folder']+df_images['file name']
 
     averages_list = []
@@ -545,21 +546,21 @@ def change_basis_and_plot_PCA_2D(df_images, data_eigenvectors, comp1, comp2, hue
 
 if __name__ == '__main__':
 
-    preprocessed_folder = "../../data/07_masked_and_smooth"
+    preprocessed_folder = "../test_dataset/07_masked_and_smooth"
     filename = 'DatasetInfo.csv'
     dataframe = pd.read_csv(os.path.join(preprocessed_folder, filename))
-    mask_filename = '../../data/07_masked_and_smooth/mask_C2.tif'
+    mask_filename = '../test_dataset/07_masked_and_smooth/mask_C2.tif'
 
     dataframe = dataframe[dataframe["channel"]=="C2"]
     dataframe_averages = reshape_averages_for_PCA(dataframe, mask_filename)
     dataframe, eigenvectors_dict = PCA_analysis_averages(
-        dataframe, dataframe_averages, 4,  mask_filename)
+        dataframe, dataframe_averages, 3,  mask_filename)
 
     #dataframe = reshape_all_images_for_PCA(dataframe, mask_filename)
     #dataframe, eigenvectors_dict = PCA_analysis(dataframe, n_components=4)
 
-    #plot_PCA_2D(dataframe, eigenvectors_dict, 1, 2, hue='type',
-    #            figsize=(14, 20), reverse_x=False, reverse_y=False, cmap="jet")
+    plot_PCA_2D(dataframe, eigenvectors_dict, 0, 1, hue='type',
+                figsize=(14, 20), reverse_x=False, reverse_y=False, cmap="jet")
 
-    change_basis_and_plot_PCA_2D(dataframe, eigenvectors_dict, 1, 2, hue='type',
-                       v1_x=1, v1_y=0, v2_x=0, v2_y=1, origin="empty", figsize=(14, 20), cmap="jet")
+    #change_basis_and_plot_PCA_2D(dataframe, eigenvectors_dict, 0, 1, hue='type',
+    #                   v1_x=1, v1_y=0, v2_x=0, v2_y=1, origin="empty", figsize=(14, 20), cmap="jet")
