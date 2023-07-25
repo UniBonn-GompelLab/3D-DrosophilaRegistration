@@ -11,7 +11,7 @@ import numpy as np
 import open3d as o3d
 from skimage import morphology
 from scipy import ndimage
-
+from PIL import Image
 
 def pcd_to_image(pcd, pcd_values, image_shape):
     """
@@ -38,29 +38,30 @@ def pcd_to_image(pcd, pcd_values, image_shape):
     points_count = np.zeros(image_shape)
     assert len(pcd_values) == pcd_array.shape[-1],\
         " ERROR: the number of points in the pcd object doesn't match the number of britghness values."
-
-    index_error_flag = False
-
-    for i in range(pcd_array.shape[-1]):
-        pos = tuple(pcd_array[..., i])
-        try:
-            image[pos] += pcd_values[i]
-            points_count[pos] += 1
-        except IndexError:
-            index_error_flag = True
-
-    if index_error_flag:
+    
+    # Drop pcd points outside the image space:
+    indexes_to_drop0 = np.nonzero(pcd_array[0,:]>(image_shape[0]-1))[0]
+    indexes_to_drop1 = np.nonzero(pcd_array[1,:]>(image_shape[1]-1))[0]
+    indexes_to_drop2 = np.nonzero(pcd_array[2,:]>(image_shape[2]-1))[0]
+    indexes_to_drop_all = [(np.concatenate((indexes_to_drop0, indexes_to_drop1, indexes_to_drop2)))]
+     
+    if len(indexes_to_drop_all[0]>1):
         print("Warning: The point cloud does not fit the image shape. Part of the object will be cropped.",  file=sys.stderr)
+        pcd_array = np.delete(pcd_array, indexes_to_drop_all, axis = 1)
+        pcd_values = np.delete(pcd_values, indexes_to_drop_all, axis = 0)
 
-    # average the birghtness in voxels containing multiple points:
-    image[points_count > 1] = image[points_count > 1] / \
-        points_count[points_count > 1]
+    np.add.at(image, (pcd_array[0], pcd_array[1], pcd_array[2]), pcd_values)
+    np.add.at(points_count, (pcd_array[0], pcd_array[1], pcd_array[2]), 1)
+
+    # average the brightness in voxels containing multiple points:
+    image[points_count > 1] = image[points_count > 1]/points_count[points_count > 1]
 
     # fill holes with the median of neighbouring voxels:
     mask = morphology.closing(image > 0, morphology.ball(2))
     image_median = ndimage.median_filter(image, size=3)
     image[points_count == 0] = image_median[points_count == 0]
     image = image*mask
+    
     return image
 
 
@@ -100,7 +101,7 @@ def image_to_pcd(image_3d, upscale=None):
     """
 
     if upscale:
-        upscaled_image = ndimage.zoom(image_3d, upscale)
+        upscaled_image = ndimage.zoom(image_3d, upscale, order = 0)
         indexes = np.nonzero(upscaled_image > 0)
         pcd_points = np.array(indexes).T/upscale
         pcd_values = upscaled_image[indexes]

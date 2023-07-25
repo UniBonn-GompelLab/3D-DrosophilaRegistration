@@ -17,6 +17,7 @@ import numpy as np
 import open3d as o3d
 from tifffile import imsave
 from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 if __name__ == '__main__':
     from aux_pcd_functions import pcd_to_image, image_to_pcd
@@ -143,9 +144,9 @@ def register_and_save_image_stack(image_file_name, input_folder, reference_image
         input_folder, 'Preprocessed_C3-'+image_file_name)
 
     try:
-        image_src_c1 = io.imread(filename_c1)
-        image_src_c2 = io.imread(filename_c2)
-        image_src_c3 = io.imread(filename_c3)
+        image_src_c1 = io.imread(filename_c1).astype(np.uint16)
+        image_src_c2 = io.imread(filename_c2).astype(np.uint16)
+        image_src_c3 = io.imread(filename_c3).astype(np.uint16)
 
     except FileNotFoundError:
         print("File not found: " + image_file_name)
@@ -153,35 +154,28 @@ def register_and_save_image_stack(image_file_name, input_folder, reference_image
 
     # Convert images in point clouds:
     pcd_src_c1, src_values_c1 = image_to_pcd(image_src_c1)
-    pcd_src_c2, src_values_c2 = image_to_pcd(image_src_c2)
-    pcd_src_c3, src_values_c3 = image_to_pcd(image_src_c3)
     pcd_target, target_values = image_to_pcd(reference_image)
 
     # Open the interface for manual registration:
     transformation = manual_registration(
         pcd_src_c1, src_values_c1, pcd_target, target_values)
     
-    # Create point clouds with higher sampling for rotation:
-    pcd_src_c1, src_values_c1 = image_to_pcd(image_src_c1, upscale = 2)
-    pcd_src_c2, src_values_c2 = image_to_pcd(image_src_c2, upscale = 2)
-    pcd_src_c3, src_values_c3 = image_to_pcd(image_src_c3, upscale = 2)
-    pcd_target, target_values = image_to_pcd(reference_image, upscale = 2)
-
-    # Apply the transformation on all channels:
+    # Draw the result:
     pcd_src_c1.transform(transformation)
-    pcd_src_c2.transform(transformation)
-    pcd_src_c3.transform(transformation)
-
-    # Draw the results:
     draw_registration_result(pcd_src_c1, pcd_target)
-
-    # Convert the registered point clouds to image stacks:
-    registered_source_image_c1 = pcd_to_image(
-        pcd_src_c1, src_values_c1, reference_image.shape)
-    registered_source_image_c2 = pcd_to_image(
-        pcd_src_c2, src_values_c2, reference_image.shape)
-    registered_source_image_c3 = pcd_to_image(
-        pcd_src_c3, src_values_c3, reference_image.shape)
+  
+    # Apply the transformation:
+    final_shape = reference_image.shape
+    arguments = [(image_src_c1, transformation, final_shape),
+                 (image_src_c1, transformation, final_shape),
+                 (image_src_c1, transformation, final_shape)] 
+    
+    with ProcessPoolExecutor(max_workers=3) as executor:
+        results = list(executor.map(aux_apply_registration_for_pool, arguments))
+    
+    registered_source_image_c1  = results[0]
+    registered_source_image_c2  = results[1]
+    registered_source_image_c3  = results[2]
 
     # Prepare filenames and save the registered images:
     filename_c1 = 'C1-'+image_file_name
@@ -200,6 +194,39 @@ def register_and_save_image_stack(image_file_name, input_folder, reference_image
 
     return [new_file_names[0], new_file_names[1], new_file_names[2]]
 
+def aux_apply_registration_for_pool(arguments):
+    registered_source_image = aux_apply_registration(arguments[0], arguments[1], arguments[2])
+    return registered_source_image
+
+
+def aux_apply_registration(image_src, transformation, shape):
+    """
+    Apply registration transformation to an input image and return the registered image.
+
+    Parameters:
+        image_src (numpy.ndarray): The source image as a 2D NumPy array.
+        transformation (open3d.geometry.Geometry3D): An Open3D Geometry3D object representing the
+                               transformation to be applied to the source image.
+        shape (tuple): A tuple (height, width) representing the desired shape of the registered image.
+
+    Returns:
+        numpy.ndarray: The registered source image as a 2D NumPy array.
+
+    Raises:
+        ValueError: If the input `image_src` is not a valid 2D NumPy array.
+        ValueError: If the input `shape` is not a valid tuple of two positive integers (height, width).
+        ValueError: If the input `transformation` is not a valid Open3D Geometry3D object.
+
+    Notes:
+        - The resulting image will be of the size specified in the 'shape' parameter.
+    """
+    # Create point clouds with higher sampling for rotation:
+    pcd_src, src_values = image_to_pcd(image_src, upscale = 2)
+    # Apply the transformation on all channels:
+    pcd_src.transform(transformation)
+    # Convert the registered point clouds to image stacks:
+    registered_source_image = pcd_to_image(pcd_src, src_values, shape)
+    return registered_source_image
 
 def aux_save_images(images, names, prefix, folder):
     """
@@ -392,6 +419,7 @@ if __name__ == '__main__':
     destination_folder = "../test_dataset/03_registered"
 
     reference_fly_filename = "../test_dataset/References_and_masks/C1_Reference_iso.tiff"
+    
 
     df_name = "DatasetInformation.xlsx"
 
