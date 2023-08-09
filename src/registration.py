@@ -167,8 +167,8 @@ def register_and_save_image_stack(image_file_name, input_folder, reference_image
     # Apply the transformation:
     final_shape = reference_image.shape
     arguments = [(image_src_c1, transformation, final_shape),
-                 (image_src_c1, transformation, final_shape),
-                 (image_src_c1, transformation, final_shape)] 
+                 (image_src_c2, transformation, final_shape),
+                 (image_src_c3, transformation, final_shape)] 
     
     with ProcessPoolExecutor(max_workers=3) as executor:
         results = list(executor.map(aux_apply_registration_for_pool, arguments))
