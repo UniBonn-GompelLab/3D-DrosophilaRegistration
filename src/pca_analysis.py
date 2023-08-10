@@ -426,7 +426,7 @@ def plot_PCA_2D(df_images, data_eigenvectors, comp1, comp2, hue='type',
 def change_basis_and_plot_PCA_2D(df_images, data_eigenvectors, comp1, comp2, hue='type',
                        v1_x=1, v1_y=0, v2_x=0, v2_y=1, origin="empty", figsize=(14, 20), cmap="jet"):
     """
-    his function is used to plot the representation of each image in a bidimensional
+    This function is used to plot the representation of each image in a bidimensional
     space defined by a linear combination of two selected pca components.
     It also plots the image space representation of the two components
     (combinations of the two eigenvectors) next to the scatterplot axes.
@@ -544,6 +544,174 @@ def change_basis_and_plot_PCA_2D(df_images, data_eigenvectors, comp1, comp2, hue
     return
 
 
+
+def plot_PCA_arbitrary_combination_2D(df_images, data_eigenvectors, 
+                                      components_1, coeffs_1, components_2, coeffs_2,
+                                      hue='type', origin="empty", figsize=(14, 20), cmap="jet"):
+    """
+    Plot image representations in a 2D space formed by linear combinations of PCA components.
+
+    This function visualizes the representation of each image in a 2D space created by
+    combining selected PCA components. Additionally, it displays the image space representation
+    of these combinations (combinations of eigenvectors) alongside the scatterplot axes.
+    The new directions in the PCA space are determined by the specified lists of components
+    and coefficients.
+
+    Parameters
+    ----------
+    df_images : pandas.DataFrame
+        A DataFrame containing image data.
+    data_eigenvectors : dict
+        A dictionary containing eigenvector data.
+    components_1 : list
+        List of component indices for the first linear combination.
+    coeffs_1 : list
+        Coefficients corresponding to the components in components_1 for the first combination.
+    components_2 : list
+        List of component indices for the second linear combination.
+    coeffs_2 : list
+        Coefficients corresponding to the components in components_2 for the second combination.
+    hue : str, optional
+        Column to use for color-coding points in the scatterplot. Default is 'type'.
+    origin : str, optional
+        Group of images to use as the new origin of the plot. Default is "empty".
+    figsize : tuple, optional
+        Size of the figure. Default is (14, 20).
+    cmap : str, optional
+        Colormap for image representation. Default is "jet".
+
+    Returns
+    -------
+    None
+        The function displays the plots but does not return any value.
+    """
+    
+    df_PCA = df_images[["PCA_coefficients", hue]].copy() 
+
+    # Create a grid to accomodate the scatterplot of PCA coefficients and
+    # the plots of the relative eigenvectors in the image space on the axes.
+
+    fig = plt.figure(constrained_layout=True, figsize=figsize)
+    widths = [1, 4, 1]
+    heights = [1, 4, 1]
+    gs = fig.add_gridspec(
+        ncols=3, nrows=3, width_ratios=widths, height_ratios=heights)
+
+    f_ax1 = fig.add_subplot(gs[:-1, 1:])
+    f_ax2 = fig.add_subplot(gs[-1:, -1:])
+    f_ax3 = fig.add_subplot(gs[0, 0])
+    f_ax4 = fig.add_subplot(gs[-1, 0])
+
+    # Calculate new origin:
+    origin = np.mean(np.stack(
+        df_PCA.loc[df_PCA[hue] == origin]['PCA_coefficients'].values)[:, :], axis = 0)
+
+    for i, row in df_PCA.iterrows():
+        All_PCA_components = row['PCA_coefficients'] - origin
+
+        x = 0
+        y = 0
+        for component, coeff in zip(components_1, coeffs_1):
+            x += All_PCA_components[component]*coeff
+        
+        for component, coeff in zip(components_2, coeffs_2):
+            y += All_PCA_components[component]*coeff
+
+        df_PCA.loc[i, 'PCA_comb_1'] = x
+        df_PCA.loc[i, 'PCA_comb_2'] = y
+
+    eigenvector_shape = coo_matrix((data_eigenvectors["Eigenvector_1"],
+                         (data_eigenvectors["x"], data_eigenvectors["y"]))).toarray().shape
+    axis_1_img = np.zeros(eigenvector_shape)
+    axis_2_img = np.zeros(eigenvector_shape)
+    
+    for component, coeff in zip(components_1, coeffs_1):
+        axis_1_img += coeff*coo_matrix((data_eigenvectors["Eigenvector_"+str(component+1)], 
+                            (data_eigenvectors["x"], data_eigenvectors["y"]))).toarray()
+    for component, coeff in zip(components_2, coeffs_2):
+        axis_2_img += coeff*coo_matrix((data_eigenvectors["Eigenvector_"+str(component+1)], 
+                            (data_eigenvectors["x"], data_eigenvectors["y"]))).toarray()
+
+
+    sns.scatterplot(data=df_PCA, x='PCA_comb_1', y='PCA_comb_2',  hue=hue, ax=f_ax1)
+
+    # Set pixels==0 to nan so that they will be transparent:
+    axis_1_img[axis_1_img == 0] = np.nan
+    axis_2_img[axis_2_img == 0] = np.nan
+
+    vmax = max([np.nanmax(abs(axis_1_img)), np.nanmax(abs(axis_1_img))])
+
+    f_ax2.imshow(axis_1_img, cmap=cmap)
+    f_ax2.get_images()[0].set_clim(-vmax, vmax)
+    f_ax2.axis('off')
+
+    f_ax3.imshow(axis_2_img, cmap=cmap)
+    f_ax3.get_images()[0].set_clim(-vmax, vmax)
+    f_ax3.axis('off')
+
+    f_ax4.axis('off')
+    f_ax4.set_title("")
+
+    sns.set_context("talk")
+    sns.set_style("whitegrid")
+    sns.set_style("ticks", {"xtick.major.size": 8, "ytick.major.size": 8})
+    sns.despine(offset=15)
+
+    f_ax1.set(xlabel='Mixed Component 1', ylabel='Mixed Component 2')
+
+    f_ax1.legend(bbox_to_anchor=(1.05, 1.0), loc='upper left', ncol=2)
+    plt.show()
+
+    return
+
+def coefficients_new_axes(directions):
+    """
+    Transform coordinates from a given basis to a new basis defined by a set of directions.
+
+    Given a list of directions that define a new basis, this function computes the rows of the
+    transformation matrix to convert coordinates from the old basis to the new one only along 
+    the given axes.
+
+    Parameters:
+    directions (list of numpy.ndarray): A list of direction vectors representing the new basis.
+    
+    Returns:
+    numpy.ndarray: The partial transformation matrix.
+                   The matrix has shape (n_directions, ndims), where n_directions 
+                   is the number of directions provided, and ndims is the number
+                   of dimensions of the original space.
+    """
+    
+    n_directions = len(directions)
+    
+    # Normalize directions:
+    for i,d in enumerate(directions):
+        directions[i] = d/np.linalg.norm(d)
+        
+    # check which coordinates are not affected by the transformation:
+    directions_matrix = np.column_stack(directions)
+    indexes_other_axes = np.where(np.sum(np.abs(directions_matrix), axis = 1) == 0)[0]
+    
+    # add additional directions that are not affected by the change of basis
+    for idx in indexes_other_axes:
+        temp_dir = np.zeros(directions_matrix.shape[0])
+        temp_dir[idx] = 1
+        directions_matrix = np.column_stack([directions_matrix, temp_dir])
+    
+    # complete the set of new coordinates by generating orthonormal vectors using Gram-Schmidt:
+    ndims = directions_matrix.shape[0]
+    n_newdims = directions_matrix.shape[1]
+    for i in range(ndims - n_newdims):
+        new_vector = np.random.randn(ndims)
+        for d in directions_matrix.T:
+            new_vector = new_vector - np.dot(new_vector, d)*d
+        new_vector = new_vector/np.linalg.norm(new_vector)
+        directions_matrix = np.column_stack([directions_matrix, new_vector])
+    
+    
+    inv_transform = np.linalg.inv(directions_matrix)
+    return inv_transform[0:n_directions,:]
+
 if __name__ == '__main__':
 
     preprocessed_folder = "../test_dataset/07_masked_and_smooth"
@@ -552,15 +720,24 @@ if __name__ == '__main__':
     mask_filename = '../test_dataset/07_masked_and_smooth/mask_C2.tif'
 
     dataframe = dataframe[dataframe["channel"]=="C2"]
-    dataframe_averages = reshape_averages_for_PCA(dataframe, mask_filename)
-    dataframe, eigenvectors_dict = PCA_analysis_averages(
-        dataframe, dataframe_averages, 3,  mask_filename)
+    #dataframe_averages = reshape_averages_for_PCA(dataframe, mask_filename)
+    #dataframe, eigenvectors_dict = PCA_analysis_averages(
+    #    dataframe, dataframe_averages, 3,  mask_filename)
 
-    #dataframe = reshape_all_images_for_PCA(dataframe, mask_filename)
-    #dataframe, eigenvectors_dict = PCA_analysis(dataframe, n_components=4)
+    dataframe = reshape_all_images_for_PCA(dataframe, mask_filename)
+    dataframe, eigenvectors_dict = PCA_analysis(dataframe, n_components=3)
 
-    plot_PCA_2D(dataframe, eigenvectors_dict, 0, 1, hue='type',
-                figsize=(14, 20), reverse_x=False, reverse_y=False, cmap="jet")
+    # plot_PCA_2D(dataframe, eigenvectors_dict, 0, 1, hue='type',
+    #             figsize=(14, 20), reverse_x=False, reverse_y=False, cmap="jet")
+    
+    components_1 = [0,1]
+    coeffs_1=[0.5,0.5] 
+    components_2 = [2]
+    coeffs_2 = [1]
+    
+    plot_PCA_arbitrary_combination_2D(dataframe, eigenvectors_dict, 
+                                      components_1, coeffs_1, components_2, coeffs_2,
+                                      hue='type', origin="A", figsize=(14, 20), cmap="jet")
 
     #change_basis_and_plot_PCA_2D(dataframe, eigenvectors_dict, 0, 1, hue='type',
     #                   v1_x=1, v1_y=0, v2_x=0, v2_y=1, origin="empty", figsize=(14, 20), cmap="jet")
